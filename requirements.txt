@@ -5,5 +5,3 @@ PyMuPDF==1.21.1
 uvicorn
 python-multipart
 aiohttp
-qrcode[pil]==7.4.2
-backports.zoneinfo
