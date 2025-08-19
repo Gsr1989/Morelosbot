@@ -11,6 +11,10 @@ from supabase import create_client, Client
 import asyncio
 import os
 import fitz  # PyMuPDF
+import string
+import qrcode
+import io
+from zoneinfo import ZoneInfo
 
 # ------------ CONFIG ------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -18,8 +22,36 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 OUTPUT_DIR = "documentos"
-PLANTILLA_PDF = "cdmxdigital2025ppp.pdf"
-PLANTILLA_BUENO = "elbueno.pdf"
+PLANTILLA_PDF = "morelos_hoja1_imagen.pdf"
+PLANTILLA_BUENO = "morelosvergas1.pdf"
+
+# Timezone México
+TZ_MX = ZoneInfo("America/Mexico_City")
+
+# Coordenadas Morelos
+coords_morelos = {
+    "folio": (665,282,18,(1,0,0)),
+    "placa": (200,200,60,(0,0,0)),
+    "fecha": (200,340,14,(0,0,0)),
+    "vigencia": (600,340,14,(0,0,0)),
+    "marca": (110,425,14,(0,0,0)),
+    "serie": (460,420,14,(0,0,0)),
+    "linea": (110,455,14,(0,0,0)),
+    "motor": (460,445,14,(0,0,0)),
+    "anio": (110,485,14,(0,0,0)),
+    "color": (460,395,14,(0,0,0)),
+    "tipo": (510,470,14,(0,0,0)),
+    "nombre": (150,370,14,(0,0,0)),
+    "fecha_hoja2": (126,310,15,(0,0,0)),
+}
+
+# Meses en español
+meses_es = {
+    "January": "ENERO", "February": "FEBRERO", "March": "MARZO",
+    "April": "ABRIL", "May": "MAYO", "June": "JUNIO",
+    "July": "JULIO", "August": "AGOSTO", "September": "SEPTIEMBRE",
+    "October": "OCTUBRE", "November": "NOVIEMBRE", "December": "DICIEMBRE"
+}
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -31,12 +63,38 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ------------ FOLIO ------------
+# ------------ FOLIO Y PLACA ------------
 folio_counter = {"count": 1}
-def nuevo_folio() -> str:
-    folio = f"01{folio_counter['count']}"
+def generar_folio_automatico(prefijo: str) -> str:
+    folio = f"{prefijo}{folio_counter['count']:04d}"
     folio_counter["count"] += 1
     return folio
+
+def generar_placa_digital():
+    archivo = "placas_digitales.txt"
+    abc = string.ascii_uppercase
+    if not os.path.exists(archivo):
+        with open(archivo, "w") as f:
+            f.write("GSR1989\n")
+    ultimo = open(archivo).read().strip().split("\n")[-1]
+    pref, num = ultimo[:3], int(ultimo[3:])
+    if num < 9999:
+        nuevo = f"{pref}{num+1:04d}"
+    else:
+        l1,l2,l3 = list(pref)
+        i3 = abc.index(l3)
+        if i3 < 25:
+            l3 = abc[i3+1]
+        else:
+            i2 = abc.index(l2)
+            if i2 < 25:
+                l2 = abc[i2+1]; l3 = "A"
+            else:
+                l1 = abc[(abc.index(l1)+1)%26]; l2=l3="A"
+        nuevo = f"{l1}{l2}{l3}0000"
+    with open(archivo,"a") as f:
+        f.write(nuevo+"\n")
+    return nuevo
 
 # ------------ FSM STATES ------------
 class PermisoForm(StatesGroup):
@@ -45,41 +103,85 @@ class PermisoForm(StatesGroup):
     anio = State()
     serie = State()
     motor = State()
+    color = State()
+    tipo = State()
     nombre = State()
 
-# ------------ PDF ------------
+# ------------ PDF FUNCTIONS ------------
 def generar_pdf_principal(datos: dict) -> str:
     doc = fitz.open(PLANTILLA_PDF)
-    page = doc[0]
+    pg = doc[0]
 
-    page.insert_text((87, 130), datos["folio"], fontsize=14, color=(1, 0, 0))         # FOLIO
-    page.insert_text((130, 145), datos["fecha"], fontsize=12, color=(0, 0, 0))        # FECHA
-    page.insert_text((87, 290), datos["marca"], fontsize=11, color=(0, 0, 0))         # MARCA
-    page.insert_text((375, 290), datos["serie"], fontsize=11, color=(0, 0, 0))        # SERIE
-    page.insert_text((87, 307), datos["linea"], fontsize=11, color=(0, 0, 0))         # LINEA
-    page.insert_text((375, 307), datos["motor"], fontsize=11, color=(0, 0, 0))        # MOTOR
-    page.insert_text((87, 323), datos["anio"], fontsize=11, color=(0, 0, 0))          # AÑO
-    page.insert_text((375, 323), datos["vigencia"], fontsize=11, color=(0, 0, 0))     # VIGENCIA
-    page.insert_text((375, 340), datos["nombre"], fontsize=11, color=(0, 0, 0))       # NOMBRE
+    # Usar coordenadas de Morelos
+    pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
+    pg.insert_text(coords_morelos["placa"][:2], datos["placa"], fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
+    pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"], fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
+    pg.insert_text(coords_morelos["vigencia"][:2], datos["vigencia"], fontsize=coords_morelos["vigencia"][2], color=coords_morelos["vigencia"][3])
+    pg.insert_text(coords_morelos["marca"][:2], datos["marca"], fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
+    pg.insert_text(coords_morelos["serie"][:2], datos["serie"], fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
+    pg.insert_text(coords_morelos["linea"][:2], datos["linea"], fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
+    pg.insert_text(coords_morelos["motor"][:2], datos["motor"], fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
+    pg.insert_text(coords_morelos["anio"][:2], datos["anio"], fontsize=coords_morelos["anio"][2], color=coords_morelos["anio"][3])
+    pg.insert_text(coords_morelos["color"][:2], datos["color"], fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
+    pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"], fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
+    pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
 
-    filename = f"{OUTPUT_DIR}/{datos['folio']}_principal.pdf"
+    # Segunda página si existe
+    if len(doc) > 1:
+        pg2 = doc[1]
+        pg2.insert_text(coords_morelos["fecha_hoja2"][:2], datos["vigencia"], fontsize=coords_morelos["fecha_hoja2"][2], color=coords_morelos["fecha_hoja2"][3])
+
+        # Generar QR
+        texto_qr = f"""FOLIO: {datos["folio"]}
+NOMBRE: {datos["nombre"]}
+MARCA: {datos["marca"]}
+LINEA: {datos["linea"]}
+ANO: {datos["anio"]}
+SERIE: {datos["serie"]}
+MOTOR: {datos["motor"]}
+COLOR: {datos["color"]}
+TIPO: {datos["tipo"]}
+PERMISO MORELOS DIGITAL"""
+
+        qr = qrcode.make(texto_qr)
+        img_buffer = io.BytesIO()
+        qr.save(img_buffer, format="PNG")
+        img_buffer.seek(0)
+
+        img_pdf = fitz.Pixmap(img_buffer)
+        width_cm = 0.4
+        px_per_cm = 300 / 1.0
+        size_px = int(px_per_cm * width_cm)
+
+        x, y = 650, 128
+        rect = fitz.Rect(x, y, x + size_px, y + size_px)
+        pg2.insert_image(rect, pixmap=img_pdf)
+
+    filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
     doc.save(filename)
+    doc.close()
     return filename
 
-def generar_pdf_bueno(serie: str, fecha: datetime, folio: str) -> str:
+def generar_pdf_bueno(folio: str, numero_serie: str, nombre: str) -> str:
     doc = fitz.open(PLANTILLA_BUENO)
     page = doc[0]
-    page.insert_text((135.02, 193.88), serie, fontsize=6)
-    page.insert_text((190, 324), fecha.strftime("%d/%m/%Y"), fontsize=6)
-    filename = f"{OUTPUT_DIR}/{folio}_bueno.pdf"
+
+    ahora = datetime.now(TZ_MX)
+    page.insert_text((155, 245), nombre, fontsize=18, fontname="helv")
+    page.insert_text((1045, 205), folio, fontsize=20, fontname="helv")
+    page.insert_text((1045, 275), ahora.strftime("%d/%m/%Y"), fontsize=20, fontname="helv")
+    page.insert_text((1045, 348), ahora.strftime("%H:%M:%S"), fontsize=20, fontname="helv")
+    
+    filename = f"{OUTPUT_DIR}/{folio}.pdf"
     doc.save(filename)
+    doc.close()
     return filename
 
 # ------------ HANDLERS ------------
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("👋 Bienvenido. Usa /permiso para iniciar")
+    await message.answer("👋 Bienvenido al sistema de permisos de Morelos. Usa /permiso para iniciar")
 
 @dp.message(Command("permiso"))
 async def permiso_cmd(message: types.Message, state: FSMContext):
@@ -113,6 +215,18 @@ async def get_serie(message: types.Message, state: FSMContext):
 @dp.message(PermisoForm.motor)
 async def get_motor(message: types.Message, state: FSMContext):
     await state.update_data(motor=message.text.strip())
+    await message.answer("Color del vehículo:")
+    await state.set_state(PermisoForm.color)
+
+@dp.message(PermisoForm.color)
+async def get_color(message: types.Message, state: FSMContext):
+    await state.update_data(color=message.text.strip())
+    await message.answer("Tipo de vehículo:")
+    await state.set_state(PermisoForm.tipo)
+
+@dp.message(PermisoForm.tipo)
+async def get_tipo(message: types.Message, state: FSMContext):
+    await state.update_data(tipo=message.text.strip())
     await message.answer("Nombre del solicitante:")
     await state.set_state(PermisoForm.nombre)
 
@@ -120,31 +234,30 @@ async def get_motor(message: types.Message, state: FSMContext):
 async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
     datos["nombre"] = message.text.strip()
-    datos["folio"] = nuevo_folio()
+    datos["folio"] = generar_folio_automatico("07")
+    datos["placa"] = generar_placa_digital()
 
     # -------- FECHAS FORMATOS --------
-    hoy = datetime.now()
-    meses = {
-        1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-        5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-        9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
-    }
-    datos["fecha"] = f"{hoy.day} de {meses[hoy.month]} del {hoy.year}"
-    fecha_ven = hoy + timedelta(days=30)
+    fecha_exp = datetime.now(TZ_MX)
+    fecha_ven = fecha_exp + timedelta(days=30)
+
+    datos["fecha"] = fecha_exp.strftime(f"%d DE {meses_es[fecha_exp.strftime('%B')]} DEL %Y").upper()
     datos["vigencia"] = fecha_ven.strftime("%d/%m/%Y")
+    fecha_iso = fecha_exp.isoformat()
+    fecha_ven_iso = fecha_ven.isoformat()
     # ---------------------------------
 
     try:
         p1 = generar_pdf_principal(datos)
-        p2 = generar_pdf_bueno(datos["serie"], hoy, datos["folio"])
+        p2 = generar_pdf_bueno(datos["folio"], datos["serie"], datos["nombre"])
 
         await message.answer_document(
             FSInputFile(p1),
-            caption=f"📄 Principal - Folio: {datos['folio']}"
+            caption=f"📄 Permiso Morelos - Folio: {datos['folio']} | Placa: {datos['placa']}"
         )
         await message.answer_document(
             FSInputFile(p2),
-            caption=f"✅ EL BUENO - Serie: {datos['serie']}"
+            caption=f"✅ Comprobante - Serie: {datos['serie']}"
         )
 
         supabase.table("folios_registrados").insert({
@@ -155,12 +268,12 @@ async def get_nombre(message: types.Message, state: FSMContext):
             "numero_serie": datos["serie"],
             "numero_motor": datos["motor"],
             "nombre": datos["nombre"],
-            "fecha_expedicion": hoy.date().isoformat(),
-            "fecha_vencimiento": fecha_ven.date().isoformat(),
-            "entidad": "cdmx",
+            "fecha_expedicion": fecha_iso,
+            "fecha_vencimiento": fecha_ven_iso,
+            "entidad": "morelos",
         }).execute()
 
-        await message.answer("✅ Permiso guardado y registrado correctamente.")
+        await message.answer("✅ Permiso de Morelos guardado y registrado correctamente.")
     except Exception as e:
         await message.answer(f"❌ Error al generar: {e}")
     finally:
