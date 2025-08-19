@@ -60,7 +60,7 @@ dp = Dispatcher(storage=storage)
 # ------------ FOLIO Y PLACA ------------
 folio_counter = {"count": 1}
 def generar_folio_automatico(prefijo: str) -> str:
-    folio = f"{prefijo}{folio_counter['count']:04d}"
+    folio = f"{prefijo}{folio_counter['count']}"
     folio_counter["count"] += 1
     return folio
 
@@ -202,7 +202,7 @@ async def get_tipo(message: types.Message, state: FSMContext):
 async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
     datos["nombre"] = message.text.strip()
-    datos["folio"] = generar_folio_automatico("07")
+    datos["folio"] = generar_folio_automatico("02")
     datos["placa"] = generar_placa_digital()
 
     # -------- FECHAS FORMATOS --------
