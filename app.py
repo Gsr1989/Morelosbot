@@ -12,9 +12,6 @@ import asyncio
 import os
 import fitz  # PyMuPDF
 import string
-import qrcode
-import io
-from zoneinfo import ZoneInfo
 
 # ------------ CONFIG ------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -24,9 +21,6 @@ BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
 OUTPUT_DIR = "documentos"
 PLANTILLA_PDF = "morelos_hoja1_imagen.pdf"
 PLANTILLA_BUENO = "morelosvergas1.pdf"
-
-# Timezone México
-TZ_MX = ZoneInfo("America/Mexico_City")
 
 # Coordenadas Morelos
 coords_morelos = {
@@ -126,36 +120,10 @@ def generar_pdf_principal(datos: dict) -> str:
     pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"], fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
     pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
 
-    # Segunda página si existe
+    # Segunda página si existe (sin QR)
     if len(doc) > 1:
         pg2 = doc[1]
         pg2.insert_text(coords_morelos["fecha_hoja2"][:2], datos["vigencia"], fontsize=coords_morelos["fecha_hoja2"][2], color=coords_morelos["fecha_hoja2"][3])
-
-        # Generar QR
-        texto_qr = f"""FOLIO: {datos["folio"]}
-NOMBRE: {datos["nombre"]}
-MARCA: {datos["marca"]}
-LINEA: {datos["linea"]}
-ANO: {datos["anio"]}
-SERIE: {datos["serie"]}
-MOTOR: {datos["motor"]}
-COLOR: {datos["color"]}
-TIPO: {datos["tipo"]}
-PERMISO MORELOS DIGITAL"""
-
-        qr = qrcode.make(texto_qr)
-        img_buffer = io.BytesIO()
-        qr.save(img_buffer, format="PNG")
-        img_buffer.seek(0)
-
-        img_pdf = fitz.Pixmap(img_buffer)
-        width_cm = 0.4
-        px_per_cm = 300 / 1.0
-        size_px = int(px_per_cm * width_cm)
-
-        x, y = 650, 128
-        rect = fitz.Rect(x, y, x + size_px, y + size_px)
-        pg2.insert_image(rect, pixmap=img_pdf)
 
     filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
     doc.save(filename)
@@ -166,7 +134,7 @@ def generar_pdf_bueno(folio: str, numero_serie: str, nombre: str) -> str:
     doc = fitz.open(PLANTILLA_BUENO)
     page = doc[0]
 
-    ahora = datetime.now(TZ_MX)
+    ahora = datetime.now()
     page.insert_text((155, 245), nombre, fontsize=18, fontname="helv")
     page.insert_text((1045, 205), folio, fontsize=20, fontname="helv")
     page.insert_text((1045, 275), ahora.strftime("%d/%m/%Y"), fontsize=20, fontname="helv")
@@ -238,7 +206,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos["placa"] = generar_placa_digital()
 
     # -------- FECHAS FORMATOS --------
-    fecha_exp = datetime.now(TZ_MX)
+    fecha_exp = datetime.now()
     fecha_ven = fecha_exp + timedelta(days=30)
 
     datos["fecha"] = fecha_exp.strftime(f"%d DE {meses_es[fecha_exp.strftime('%B')]} DEL %Y").upper()
