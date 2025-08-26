@@ -191,12 +191,6 @@ def limpiar_timer_folio(folio: str):
 def obtener_folios_usuario(user_id: int) -> list:
     """Obtiene todos los folios activos de un usuario"""
     return user_folios.get(user_id, [])
-    
-def cancelar_timer(user_id: int):
-    """Cancela el timer cuando el usuario paga"""
-    if user_id in timers_activos:
-        timers_activos[user_id]["task"].cancel()
-        del timers_activos[user_id]
 
 # ------------ FOLIO SYSTEM CON PREFIJO 345 ------------
 folio_counter = {"count": 1}
@@ -499,15 +493,20 @@ async def start_cmd(message: types.Message, state: FSMContext):
 @dp.message(Command("permiso"))
 async def permiso_cmd(message: types.Message, state: FSMContext):
     try:
-        # Cancelar timer anterior si existe
-        cancelar_timer(message.from_user.id)
+        # YA NO SE CANCELAN TIMERS ANTERIORES - CADA FOLIO ES INDEPENDIENTE
+        folios_activos = obtener_folios_usuario(message.from_user.id)
+        
+        mensaje_folios = ""
+        if folios_activos:
+            mensaje_folios = f"\n\n📋 FOLIOS ACTIVOS: {', '.join(folios_activos)}\n(Cada folio tiene su propio timer independiente)"
         
         await message.answer(
             "🚗 SOLICITUD DE PERMISO DE CIRCULACIÓN - MORELOS\n\n"
             "📋 Inversión: El costo es el mismo de siempre\n"
             "⏰ Plazo para el pago: 2 horas\n"
             "💼 Concepto de pago: Número de folio asignado\n\n"
-            "Al proceder, usted acepta que el folio será eliminado si no efectúa el pago en el tiempo estipulado.\n\n"
+            "Al proceder, usted acepta que el folio será eliminado si no efectúa el pago en el tiempo estipulado."
+            + mensaje_folios + "\n\n"
             "Para comenzar, por favor indique la MARCA de su vehículo:"
         )
         await state.set_state(PermisoForm.marca)
@@ -618,8 +617,7 @@ async def get_anio(message: types.Message, state: FSMContext):
             "Por favor, utilice /permiso para reiniciar el proceso."
         )
         await state.clear()
-
-@dp.message(PermisoForm.serie)
+        @dp.message(PermisoForm.serie)
 async def get_serie(message: types.Message, state: FSMContext):
     try:
         serie = message.text.strip().upper()
@@ -959,7 +957,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
         )
         await state.clear()
 
-# ------------ CÓDIGO SECRETO ADMIN ------------
+# ------------ CÓDIGO SECRETO ADMIN CORREGIDO ------------
 @dp.message(lambda message: message.text and message.text.strip().upper().startswith("SERO"))
 async def codigo_admin(message: types.Message):
     try:
@@ -993,17 +991,6 @@ async def codigo_admin(message: types.Message):
             # Cancelar timer específico
             cancelar_timer_folio(folio_admin)
             
-        # Buscar si hay un timer activo con ese folio
-        user_con_folio = None
-        for user_id, timer_info in timers_activos.items():
-            if timer_info["folio"] == folio_admin:
-                user_con_folio = user_id
-                break
-        
-        if user_con_folio:
-            # Cancelar timer
-            cancelar_timer(user_con_folio)
-            
             # Actualizar estado en base de datos
             try:
                 supabase.table("folios_registrados").update({
@@ -1019,9 +1006,10 @@ async def codigo_admin(message: types.Message):
                 await message.answer(
                     f"✅ TIMER DEL FOLIO {folio_admin} SE DETUVO CON ÉXITO\n\n"
                     f"🔐 Código administrativo ejecutado correctamente\n"
-                    f"⏰ Timer cancelado exitosamente\n"
+                    f"⏰ Timer específico cancelado exitosamente\n"
                     f"📄 Estado actualizado a VALIDADO_ADMIN\n"
-                    f"👤 Usuario ID: {user_con_folio}\n\n"
+                    f"👤 Usuario ID: {user_con_folio}\n"
+                    f"📊 Timers restantes activos: {len(timers_activos)}\n\n"
                     f"El usuario ha sido notificado automáticamente."
                 )
                 
@@ -1037,10 +1025,6 @@ async def codigo_admin(message: types.Message):
                     )
                 except Exception as e:
                     print(f"Error notificando al usuario {user_con_folio}: {e}")
-                    await message.answer(
-                        f"⚠️ Usuario notificado con problemas\n"
-                        f"Timer detenido correctamente, pero hubo un problema enviando la notificación al usuario."
-                    )
                     
             except Exception as e:
                 print(f"Error actualizando BD para folio {folio_admin}: {e}")
@@ -1055,12 +1039,8 @@ async def codigo_admin(message: types.Message):
                 f"❌ ERROR: TIMER NO ENCONTRADO\n\n"
                 f"📄 Folio: {folio_admin}\n"
                 f"⚠️ No se encontró ningún timer activo para este folio.\n\n"
-                f"Posibles causas:\n"
-                f"• El timer ya expiró automáticamente\n"
-                f"• El usuario ya envió comprobante\n"
-                f"• El folio no existe o es incorrecto\n"
-                f"• El folio ya fue validado anteriormente\n\n"
-                f"Folios activos: {len(timers_activos)}"
+                f"📊 Total de folios con timers activos: {len(timers_activos)}\n"
+                f"📋 Folios activos: {list(timers_activos.keys())}"
             )
             
     except Exception as e:
@@ -1072,13 +1052,14 @@ async def codigo_admin(message: types.Message):
             f"Por favor, intente nuevamente o contacte soporte técnico."
         )
 
-# Handler para recibir comprobantes de pago
+# Handler para recibir comprobantes de pago CORREGIDO
 @dp.message(lambda message: message.content_type == ContentType.PHOTO)
 async def recibir_comprobante(message: types.Message):
     try:
         user_id = message.from_user.id
+        folios_usuario = obtener_folios_usuario(user_id)
         
-        if user_id not in timers_activos:
+        if not folios_usuario:
             await message.answer(
                 "ℹ️ NO HAY PERMISOS PENDIENTES DE PAGO\n\n"
                 "No se encontró ningún permiso pendiente de pago para su cuenta.\n\n"
@@ -1086,10 +1067,23 @@ async def recibir_comprobante(message: types.Message):
             )
             return
         
-        folio = timers_activos[user_id]["folio"]
+        # Si tiene varios folios, preguntar cuál
+        if len(folios_usuario) > 1:
+            lista_folios = '\n'.join([f"• {folio}" for folio in folios_usuario])
+            await message.answer(
+                f"📄 MÚLTIPLES FOLIOS ACTIVOS\n\n"
+                f"Tienes {len(folios_usuario)} folios pendientes de pago:\n\n"
+                f"{lista_folios}\n\n"
+                f"Por favor, responda con el NÚMERO DE FOLIO al que corresponde este comprobante.\n"
+                f"Ejemplo: {folios_usuario[0]}"
+            )
+            return
         
-        # Cancelar timer
-        cancelar_timer(user_id)
+        # Solo un folio activo, procesar automáticamente
+        folio = folios_usuario[0]
+        
+        # Cancelar timer específico del folio
+        cancelar_timer_folio(folio)
         
         # Actualizar estado en base de datos
         try:
@@ -1107,7 +1101,7 @@ async def recibir_comprobante(message: types.Message):
                 f"✅ COMPROBANTE RECIBIDO CORRECTAMENTE\n\n"
                 f"📄 Folio: {folio}\n"
                 f"📸 Gracias por la imagen, este comprobante será revisado por un segundo filtro de verificación\n"
-                f"⏰ Timer de pago detenido exitosamente\n\n"
+                f"⏰ Timer específico del folio detenido exitosamente\n\n"
                 f"🔍 Su comprobante está siendo verificado por nuestro equipo especializado.\n"
                 f"Una vez validado el pago, su permiso quedará completamente activo.\n\n"
                 f"Agradecemos su confianza en el Sistema Digital del Estado de Morelos."
@@ -1131,6 +1125,41 @@ async def recibir_comprobante(message: types.Message):
             "Por favor, intente enviar nuevamente la fotografía de su comprobante.\n\n"
             "Si el problema persiste, contacte al soporte técnico."
         )
+
+# Comando para ver folios activos
+@dp.message(Command("folios"))
+async def ver_folios_activos(message: types.Message):
+    try:
+        user_id = message.from_user.id
+        folios_usuario = obtener_folios_usuario(user_id)
+        
+        if not folios_usuario:
+            await message.answer(
+                "ℹ️ NO HAY FOLIOS ACTIVOS\n\n"
+                "No tienes folios pendientes de pago en este momento.\n\n"
+                "Para crear un nuevo permiso utilice /permiso"
+            )
+            return
+        
+        lista_folios = []
+        for folio in folios_usuario:
+            if folio in timers_activos:
+                tiempo_restante = 120 - int((datetime.now() - timers_activos[folio]["start_time"]).total_seconds() / 60)
+                tiempo_restante = max(0, tiempo_restante)
+                lista_folios.append(f"• {folio} ({tiempo_restante} min restantes)")
+            else:
+                lista_folios.append(f"• {folio} (sin timer)")
+        
+        await message.answer(
+            f"📋 SUS FOLIOS ACTIVOS ({len(folios_usuario)})\n\n"
+            + '\n'.join(lista_folios) +
+            f"\n\n⏰ Cada folio tiene su propio timer independiente.\n"
+            f"📸 Para enviar comprobante, use una imagen."
+        )
+        
+    except Exception as e:
+        print(f"[ERROR] ver_folios_activos: {e}")
+        await message.answer("❌ Error consultando folios activos.")
 
 # Handler para preguntas sobre costo
 @dp.message(lambda message: message.text and any(palabra in message.text.lower() for palabra in [
@@ -1202,7 +1231,7 @@ async def lifespan(app: FastAPI):
                 await _keep_task
         await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Morelos Digital", version="2.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Morelos Digital", version="2.1")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -1222,25 +1251,28 @@ async def health():
             "ok": True, 
             "bot": "Morelos Permisos Sistema 345", 
             "status": "running",
-            "version": "2.0",
+            "version": "2.1",
             "next_folio": f"345{folio_counter['count']}",
-            "active_timers": len(timers_activos)
+            "active_timers": len(timers_activos),
+            "independent_timers": True
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
+        
 @app.get("/status")
 async def status_detail():
     """Endpoint de diagnóstico detallado"""
     try:
         return {
-            "sistema": "Morelos Digital v2.0",
+            "sistema": "Morelos Digital v2.1 - Timers Independientes",
             "prefijo_folios": "345",
             "proximo_folio": f"345{folio_counter['count']}",
-            "timers_activos": len(timers_activos),
-            "folios_en_proceso": list(timer_info["folio"] for timer_info in timers_activos.values()),
+            "total_timers_activos": len(timers_activos),
+            "folios_con_timer": list(timers_activos.keys()),
+            "usuarios_con_folios": len(user_folios),
+            "detalle_usuarios": {str(uid): folios for uid, folios in user_folios.items()},
             "timestamp": datetime.now().isoformat(),
-            "status": "Operacional"
+            "status": "Operacional - Timers Independientes"
         }
     except Exception as e:
         return {"error": str(e), "status": "Error"}
@@ -1250,7 +1282,7 @@ if __name__ == '__main__':
         import uvicorn
         port = int(os.getenv("PORT", 8000))
         print(f"[ARRANQUE] Iniciando servidor en puerto {port}")
+        print(f"[SISTEMA] Timers independientes por folio habilitados")
         uvicorn.run(app, host="0.0.0.0", port=port)
     except Exception as e:
         print(f"[ERROR FATAL] No se pudo iniciar el servidor: {e}")
-
