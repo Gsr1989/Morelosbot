@@ -987,6 +987,13 @@ async def codigo_admin(message: types.Message):
             return
         
         # Buscar si hay un timer activo con ese folio
+        if folio_admin in timers_activos:
+            user_con_folio = timers_activos[folio_admin]["user_id"]
+            
+            # Cancelar timer específico
+            cancelar_timer_folio(folio_admin)
+            
+        # Buscar si hay un timer activo con ese folio
         user_con_folio = None
         for user_id, timer_info in timers_activos.items():
             if timer_info["folio"] == folio_admin:
