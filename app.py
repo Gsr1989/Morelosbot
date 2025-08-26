@@ -61,7 +61,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ------------ TIMER MANAGEMENT (AÑADIDO DESDE JALISCO) ------------
+# ------------ TIMER MANAGEMENT ------------
 timers_activos = {}  # {user_id: {"task": task, "folio": folio, "start_time": datetime}}
 
 async def eliminar_folio_automatico(user_id: int, folio: str):
@@ -142,8 +142,38 @@ def cancelar_timer(user_id: int):
         timers_activos[user_id]["task"].cancel()
         del timers_activos[user_id]
 
-# ------------ FOLIO Y PLACA ------------
+# ------------ FOLIO MEJORADO CON INICIALIZACIÓN DESDE SUPABASE ------------
 folio_counter = {"count": 1}
+
+def inicializar_folio_desde_supabase():
+    """Inicializa el contador de folios desde el último registro en Supabase"""
+    try:
+        response = supabase.table("folios_registrados") \
+            .select("folio") \
+            .eq("entidad", "morelos") \
+            .order("folio", desc=True) \
+            .limit(1) \
+            .execute()
+
+        if response.data:
+            ultimo_folio = response.data[0]["folio"]
+            # Extraer número del folio (eliminar prefijo "02")
+            if ultimo_folio.startswith("02") and len(ultimo_folio) > 2:
+                try:
+                    numero = int(ultimo_folio[2:])  # Quitar "02" del inicio
+                    folio_counter["count"] = numero + 1
+                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 02{folio_counter['count']}")
+                except ValueError:
+                    folio_counter["count"] = 1
+            else:
+                folio_counter["count"] = 1
+        else:
+            folio_counter["count"] = 1
+            print("[INFO] No se encontraron folios de Morelos, iniciando desde 021")
+    except Exception as e:
+        print(f"[ERROR] Al inicializar folio Morelos: {e}")
+        folio_counter["count"] = 1
+
 def generar_folio_automatico(prefijo: str) -> str:
     folio = f"{prefijo}{folio_counter['count']}"
     folio_counter["count"] += 1
@@ -191,21 +221,21 @@ def generar_pdf_principal(datos: dict) -> str:
     doc = fitz.open(PLANTILLA_PDF)
     pg = doc[0]
 
-    # Usar coordenadas de Morelos
+    # Usar coordenadas de Morelos - CONVERTIR TODO A MAYÚSCULAS
     pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
-    pg.insert_text(coords_morelos["placa"][:2], datos["placa"], fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
-    pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"], fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
+    pg.insert_text(coords_morelos["placa"][:2], datos["placa"].upper(), fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
+    pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"].upper(), fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
     pg.insert_text(coords_morelos["vigencia"][:2], datos["vigencia"], fontsize=coords_morelos["vigencia"][2], color=coords_morelos["vigencia"][3])
-    pg.insert_text(coords_morelos["marca"][:2], datos["marca"], fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
-    pg.insert_text(coords_morelos["serie"][:2], datos["serie"], fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
-    pg.insert_text(coords_morelos["linea"][:2], datos["linea"], fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
-    pg.insert_text(coords_morelos["motor"][:2], datos["motor"], fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
+    pg.insert_text(coords_morelos["marca"][:2], datos["marca"].upper(), fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
+    pg.insert_text(coords_morelos["serie"][:2], datos["serie"].upper(), fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
+    pg.insert_text(coords_morelos["linea"][:2], datos["linea"].upper(), fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
+    pg.insert_text(coords_morelos["motor"][:2], datos["motor"].upper(), fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
     pg.insert_text(coords_morelos["anio"][:2], datos["anio"], fontsize=coords_morelos["anio"][2], color=coords_morelos["anio"][3])
-    pg.insert_text(coords_morelos["color"][:2], datos["color"], fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
-    pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"], fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
-    pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
+    pg.insert_text(coords_morelos["color"][:2], datos["color"].upper(), fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
+    pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"].upper(), fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
+    pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"].upper(), fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
 
-    # Segunda página si existe (sin QR)
+    # Segunda página si existe
     if len(doc) > 1:
         pg2 = doc[1]
         pg2.insert_text(coords_morelos["fecha_hoja2"][:2], datos["vigencia"], fontsize=coords_morelos["fecha_hoja2"][2], color=coords_morelos["fecha_hoja2"][3])
@@ -220,7 +250,7 @@ def generar_pdf_bueno(folio: str, numero_serie: str, nombre: str) -> str:
     page = doc[0]
 
     ahora = datetime.now()
-    page.insert_text((155, 245), nombre, fontsize=18, fontname="helv")
+    page.insert_text((155, 245), nombre.upper(), fontsize=18, fontname="helv")
     page.insert_text((1045, 205), folio, fontsize=20, fontname="helv")
     page.insert_text((1045, 275), ahora.strftime("%d/%m/%Y"), fontsize=20, fontname="helv")
     page.insert_text((1045, 348), ahora.strftime("%H:%M:%S"), fontsize=20, fontname="helv")
@@ -230,18 +260,18 @@ def generar_pdf_bueno(folio: str, numero_serie: str, nombre: str) -> str:
     doc.close()
     return filename
 
-# ------------ HANDLERS ------------
+# ------------ HANDLERS CON DIÁLOGOS ELEGANTES ------------
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "🏛️ Sistema Digital de Permisos MORELOS\n"
-        "Servicio oficial automatizado para trámites vehiculares\n\n"
-        "💰 Costo del permiso: El costo es el mismo de siempre\n"
-        "⏰ Tiempo límite para pago: 2 horas\n"
-        "📸 Métodos de pago: Transferencia bancaria y OXXO\n\n"
-        "📋 Use /permiso para iniciar su trámite\n"
-        "⚠️ IMPORTANTE: Su folio será eliminado automáticamente si no realiza el pago dentro del tiempo límite"
+        "🏛️ Sistema Digital de Permisos del Estado de Morelos\n"
+        "Plataforma oficial para la gestión de trámites vehiculares\n\n"
+        "💰 Inversión del servicio: El costo es el mismo de siempre\n"
+        "⏰ Tiempo límite para efectuar el pago: 2 horas\n"
+        "💳 Opciones de pago: Transferencia bancaria y establecimientos OXXO\n\n"
+        "📋 Para iniciar su trámite, utilice el comando /permiso\n"
+        "⚠️ IMPORTANTE: Su folio será eliminado automáticamente del sistema si no realiza el pago dentro del tiempo establecido"
     )
 
 @dp.message(Command("permiso"))
@@ -250,12 +280,12 @@ async def permiso_cmd(message: types.Message, state: FSMContext):
     cancelar_timer(message.from_user.id)
     
     await message.answer(
-        f"🚗 TRÁMITE DE PERMISO MORELOS\n\n"
-        f"📋 Costo: El costo es el mismo de siempre\n"
-        f"⏰ Tiempo para pagar: 2 horas\n"
-        f"📱 Concepto de pago: Su folio asignado\n\n"
-        f"Al continuar acepta que su folio será eliminado si no paga en el tiempo establecido.\n\n"
-        f"Comenzemos con la MARCA del vehículo:"
+        "🚗 SOLICITUD DE PERMISO DE CIRCULACIÓN - MORELOS\n\n"
+        "📋 Inversión: El costo es el mismo de siempre\n"
+        "⏰ Plazo para el pago: 2 horas\n"
+        "💼 Concepto de pago: Número de folio asignado\n\n"
+        "Al proceder, usted acepta que el folio será eliminado si no efectúa el pago en el tiempo estipulado.\n\n"
+        "Para comenzar, por favor indique la MARCA de su vehículo:"
     )
     await state.set_state(PermisoForm.marca)
 
@@ -264,8 +294,8 @@ async def get_marca(message: types.Message, state: FSMContext):
     marca = message.text.strip().upper()
     await state.update_data(marca=marca)
     await message.answer(
-        f"✅ MARCA: {marca}\n\n"
-        "Ahora indique la LÍNEA del vehículo:"
+        f"✅ MARCA REGISTRADA: {marca}\n\n"
+        "Excelente. Ahora proporcione la LÍNEA o MODELO del vehículo:"
     )
     await state.set_state(PermisoForm.linea)
 
@@ -274,8 +304,8 @@ async def get_linea(message: types.Message, state: FSMContext):
     linea = message.text.strip().upper()
     await state.update_data(linea=linea)
     await message.answer(
-        f"✅ LÍNEA: {linea}\n\n"
-        "Proporcione el AÑO del vehículo (formato de 4 dígitos):"
+        f"✅ LÍNEA CONFIRMADA: {linea}\n\n"
+        "Perfecto. Indique el AÑO de fabricación del vehículo (formato de 4 dígitos):"
     )
     await state.set_state(PermisoForm.anio)
 
@@ -284,16 +314,16 @@ async def get_anio(message: types.Message, state: FSMContext):
     anio = message.text.strip()
     if not anio.isdigit() or len(anio) != 4:
         await message.answer(
-            "⚠️ El año debe contener exactamente 4 dígitos.\n"
-            "Ejemplo válido: 2020, 2015, 2023\n\n"
-            "Por favor, ingrese nuevamente el año:"
+            "⚠️ Por favor, ingrese un año válido de 4 dígitos.\n"
+            "Ejemplo correcto: 2020, 2015, 2023\n\n"
+            "Favor de intentarlo nuevamente:"
         )
         return
     
     await state.update_data(anio=anio)
     await message.answer(
-        f"✅ AÑO: {anio}\n\n"
-        "Indique el NÚMERO DE SERIE del vehículo:"
+        f"✅ AÑO VERIFICADO: {anio}\n\n"
+        "Muy bien. Proporcione el NÚMERO DE SERIE del vehículo:"
     )
     await state.set_state(PermisoForm.serie)
 
@@ -302,16 +332,16 @@ async def get_serie(message: types.Message, state: FSMContext):
     serie = message.text.strip().upper()
     if len(serie) < 5:
         await message.answer(
-            "⚠️ El número de serie parece incompleto.\n"
-            "Verifique que haya ingresado todos los caracteres.\n\n"
+            "⚠️ El número de serie parece estar incompleto.\n"
+            "Por favor, verifique que haya ingresado la información completa.\n\n"
             "Intente nuevamente:"
         )
         return
         
     await state.update_data(serie=serie)
     await message.answer(
-        f"✅ SERIE: {serie}\n\n"
-        "Proporcione el NÚMERO DE MOTOR:"
+        f"✅ SERIE CAPTURADA: {serie}\n\n"
+        "Correcto. Ahora indique el NÚMERO DE MOTOR:"
     )
     await state.set_state(PermisoForm.motor)
 
@@ -320,8 +350,8 @@ async def get_motor(message: types.Message, state: FSMContext):
     motor = message.text.strip().upper()
     await state.update_data(motor=motor)
     await message.answer(
-        f"✅ MOTOR: {motor}\n\n"
-        "Indique el COLOR del vehículo:"
+        f"✅ MOTOR REGISTRADO: {motor}\n\n"
+        "Excelente. Especifique el COLOR del vehículo:"
     )
     await state.set_state(PermisoForm.color)
 
@@ -330,8 +360,8 @@ async def get_color(message: types.Message, state: FSMContext):
     color = message.text.strip().upper()
     await state.update_data(color=color)
     await message.answer(
-        f"✅ COLOR: {color}\n\n"
-        "Indique el TIPO de vehículo:"
+        f"✅ COLOR DOCUMENTADO: {color}\n\n"
+        "Perfecto. Indique el TIPO de vehículo (automóvil, camioneta, motocicleta, etc.):"
     )
     await state.set_state(PermisoForm.tipo)
 
@@ -340,8 +370,8 @@ async def get_tipo(message: types.Message, state: FSMContext):
     tipo = message.text.strip().upper()
     await state.update_data(tipo=tipo)
     await message.answer(
-        f"✅ TIPO: {tipo}\n\n"
-        "Finalmente, proporcione el NOMBRE COMPLETO del titular:"
+        f"✅ TIPO CLASIFICADO: {tipo}\n\n"
+        "Para finalizar, proporcione el NOMBRE COMPLETO del titular del vehículo:"
     )
     await state.set_state(PermisoForm.nombre)
 
@@ -364,11 +394,11 @@ async def get_nombre(message: types.Message, state: FSMContext):
     # ---------------------------------
 
     await message.answer(
-        f"🔄 PROCESANDO PERMISO MORELOS...\n\n"
+        f"🔄 PROCESANDO DOCUMENTACIÓN OFICIAL...\n\n"
         f"📄 Folio asignado: {datos['folio']}\n"
-        f"🚗 Placa: {datos['placa']}\n"
+        f"🚗 Placa digital: {datos['placa']}\n"
         f"👤 Titular: {nombre}\n\n"
-        "Generando documentos oficiales..."
+        "El sistema está generando su documentación. Por favor espere..."
     )
 
     try:
@@ -377,18 +407,18 @@ async def get_nombre(message: types.Message, state: FSMContext):
 
         await message.answer_document(
             FSInputFile(p1),
-            caption=f"📋 PERMISO PRINCIPAL MORELOS\n"
+            caption=f"📋 PERMISO OFICIAL DE CIRCULACIÓN - MORELOS\n"
                    f"Folio: {datos['folio']}\n"
                    f"Placa: {datos['placa']}\n"
                    f"Vigencia: 30 días\n"
-                   f"🏛️ Documento oficial con validez legal"
+                   f"🏛️ Documento con validez oficial"
         )
         
         await message.answer_document(
             FSInputFile(p2),
-            caption=f"📋 DOCUMENTO DE VERIFICACIÓN\n"
+            caption=f"📋 COMPROBANTE DE VERIFICACIÓN\n"
                    f"Serie: {datos['serie']}\n"
-                   f"🔍 Comprobante adicional de autenticidad"
+                   f"🔍 Documento complementario de autenticidad"
         )
 
         # Guardar en base de datos con estado PENDIENTE
@@ -429,9 +459,9 @@ async def get_nombre(message: types.Message, state: FSMContext):
         # INICIAR TIMER DE PAGO
         await iniciar_timer_pago(message.from_user.id, datos['folio'])
 
-        # Mensaje de instrucciones de pago con info bancaria real
+        # Mensaje de instrucciones de pago con datos bancarios actualizados
         await message.answer(
-            f"💰 INSTRUCCIONES DE PAGO\n\n"
+            f"💰 INSTRUCCIONES PARA EL PAGO\n\n"
             f"📄 Folio: {datos['folio']}\n"
             f"💵 Monto: El costo es el mismo de siempre\n"
             f"⏰ Tiempo límite: 2 horas\n\n"
@@ -442,32 +472,31 @@ async def get_nombre(message: types.Message, state: FSMContext):
             "• Cuenta: 127180013037579543\n"
             "• Concepto: Permiso " + datos['folio'] + "\n\n"
             
-            "🏪 PAGO EN OXXO:\n"
+            "🏪 PAGO EN ESTABLECIMIENTOS OXXO:\n"
             "• Referencia: 2242170180385581\n"
             "• TARJETA SPIN\n"
             "• Titular: LIZBETH LAZCANO MOSCO\n"
             "• Cantidad exacta: El costo de siempre\n\n"
             
-            f"📸 IMPORTANTE: Una vez realizado el pago, envíe la fotografía de su comprobante.\n\n"
-            f"⚠️ ADVERTENCIA: Si no completa el pago en 2 horas, el folio {datos['folio']} será eliminado automáticamente del sistema."
+            f"📸 IMPORTANTE: Una vez efectuado el pago, envíe la fotografía de su comprobante para la validación correspondiente.\n\n"
+            f"⚠️ ADVERTENCIA: Si no completa el pago en las próximas 2 horas, el folio {datos['folio']} será eliminado automáticamente del sistema."
         )
         
     except Exception as e:
         await message.answer(
             f"❌ ERROR EN EL SISTEMA\n\n"
             f"Se ha presentado un inconveniente técnico: {str(e)}\n\n"
-            "Por favor, intente nuevamente con /permiso\n"
-            "Si el problema persiste, contacte al soporte técnico."
+            "Por favor, intente nuevamente utilizando /permiso\n"
+            "Si el inconveniente persiste, contacte al área de soporte técnico."
         )
     finally:
         await state.clear()
 
-# ------------ CÓDIGO SECRETO ADMIN MEJORADO (AÑADIDO DESDE JALISCO) ------------
+# ------------ CÓDIGO SECRETO ADMIN ------------
 @dp.message(lambda message: message.text and message.text.strip().upper().startswith("SERO"))
 async def codigo_admin(message: types.Message):
     texto = message.text.strip().upper()
     
-    # Verificar formato: SERO + número de folio
     if len(texto) > 4:
         folio_admin = texto[4:]  # Quitar "SERO" del inicio
         
@@ -495,22 +524,22 @@ async def codigo_admin(message: types.Message):
             
             await message.answer(
                 f"✅ TIMER DEL FOLIO {folio_admin} SE DETUVO CON ÉXITO\n\n"
-                f"🔐 Código admin ejecutado correctamente\n"
+                f"🔐 Código administrativo ejecutado correctamente\n"
                 f"⏰ Timer cancelado exitosamente\n"
                 f"📄 Estado actualizado a VALIDADO_ADMIN\n"
                 f"👤 Usuario ID: {user_con_folio}\n\n"
                 f"El usuario ha sido notificado automáticamente."
             )
             
-            # Notificar al usuario que su permiso está validado
+            # Notificar al usuario
             try:
                 await bot.send_message(
                     user_con_folio,
                     f"✅ PAGO VALIDADO POR ADMINISTRACIÓN\n\n"
                     f"📄 Folio: {folio_admin}\n"
-                    f"Su permiso ha sido validado por administración.\n"
-                    f"El documento está completamente activo para circular.\n\n"
-                    f"Gracias por utilizar el Sistema Digital MORELOS."
+                    f"Su permiso ha sido validado por la administración.\n"
+                    f"El documento está completamente activo para su uso.\n\n"
+                    f"Gracias por utilizar el Sistema Digital del Estado de Morelos."
                 )
             except Exception as e:
                 print(f"Error notificando al usuario {user_con_folio}: {e}")
@@ -528,20 +557,19 @@ async def codigo_admin(message: types.Message):
     else:
         await message.answer(
             "⚠️ FORMATO INCORRECTO\n\n"
-            "Use el formato: SERO[número de folio]\n"
+            "Utilice el formato: SERO[número de folio]\n"
             "Ejemplo: SERO021"
         )
 
-# Handler para recibir comprobantes de pago (imágenes) - AÑADIDO DESDE JALISCO
+# Handler para recibir comprobantes de pago
 @dp.message(lambda message: message.content_type == ContentType.PHOTO)
 async def recibir_comprobante(message: types.Message):
     user_id = message.from_user.id
     
-    # Verificar si tiene timer activo
     if user_id not in timers_activos:
         await message.answer(
             "ℹ️ No se encontró ningún permiso pendiente de pago.\n\n"
-            "Si desea tramitar un nuevo permiso, use /permiso"
+            "Si desea tramitar un nuevo permiso, utilice /permiso"
         )
         return
     
@@ -564,31 +592,30 @@ async def recibir_comprobante(message: types.Message):
     await message.answer(
         f"✅ COMPROBANTE RECIBIDO CORRECTAMENTE\n\n"
         f"📄 Folio: {folio}\n"
-        f"📸 Gracias por la imagen, este comprobante será revisado por un 2do filtro\n"
+        f"📸 Gracias por la imagen, este comprobante será revisado por un segundo filtro de verificación\n"
         f"⏰ Timer de pago detenido\n\n"
-        f"🔍 Su comprobante está siendo verificado por nuestro equipo.\n"
+        f"🔍 Su comprobante está siendo verificado por nuestro equipo especializado.\n"
         f"Una vez validado el pago, su permiso quedará completamente activo.\n\n"
-        f"Gracias por utilizar el Sistema Digital MORELOS."
-    )
-
-# Handler para preguntas sobre costo/precio/depósito - AÑADIDO DESDE JALISCO
+        f"Agradecemos su confianza en el Sistema Digital del Estado de Morelos."
+        )
+    # Handler para preguntas sobre costo
 @dp.message(lambda message: message.text and any(palabra in message.text.lower() for palabra in [
     'costo', 'precio', 'cuanto', 'cuánto', 'deposito', 'depósito', 'pago', 'valor', 'monto'
 ]))
 async def responder_costo(message: types.Message):
     await message.answer(
-        "💰 INFORMACIÓN DE COSTO\n\n"
+        "💰 INFORMACIÓN SOBRE LA INVERSIÓN\n\n"
         "El costo es el mismo de siempre.\n\n"
-        "Para iniciar su trámite use /permiso"
+        "Para iniciar su trámite utilice /permiso"
     )
 
 @dp.message()
 async def fallback(message: types.Message):
     respuestas_elegantes = [
-        "🏛️ Sistema Digital MORELOS. Para tramitar su permiso utilice /permiso",
-        "📋 Servicio automatizado. Comando disponible: /permiso para iniciar trámite",
-        "⚡ Sistema en línea. Use /permiso para generar su documento oficial",
-        "🚗 Plataforma de permisos MORELOS. Inicie su proceso con /permiso"
+        "🏛️ Sistema Digital del Estado de Morelos. Para tramitar su permiso utilice /permiso",
+        "📋 Plataforma automatizada de servicios. Comando disponible: /permiso",
+        "⚡ Sistema en línea activo. Use /permiso para generar su documento oficial",
+        "🚗 Servicio de permisos de Morelos. Inicie su proceso con /permiso"
     ]
     await message.answer(random.choice(respuestas_elegantes))
 
@@ -602,6 +629,9 @@ async def keep_alive():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _keep_task
+    # Inicializar contador de folios desde Supabase
+    inicializar_folio_desde_supabase()
+    
     await bot.delete_webhook(drop_pending_updates=True)
     if BASE_URL:
         await bot.set_webhook(f"{BASE_URL}/webhook", allowed_updates=["message"])
@@ -614,6 +644,7 @@ async def lifespan(app: FastAPI):
     await bot.session.close()
 
 app = FastAPI(lifespan=lifespan)
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
