@@ -1,3 +1,8 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from supabase import create_client, Client
+import fitz
+import os
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -6,13 +11,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, ContentType
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timedelta
-from supabase import create_client, Client
 import asyncio
-import os
-import fitz  # PyMuPDF
-import string
+import qrcode
+from io import BytesIO
 import random
+from PIL import Image
 
 # ------------ CONFIG ------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
