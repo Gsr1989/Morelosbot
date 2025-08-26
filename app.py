@@ -65,34 +65,45 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ------------ TIMER MANAGEMENT ------------
-timers_activos = {}  # {user_id: {"task": task, "folio": folio, "start_time": datetime}}
+# ------------ TIMER MANAGEMENT CORREGIDO - TIMERS INDEPENDIENTES ------------
+timers_activos = {}  # {folio: {"task": task, "user_id": user_id, "start_time": datetime}}
+user_folios = {}     # {user_id: [lista_de_folios_activos]}
 
-async def eliminar_folio_automatico(user_id: int, folio: str):
+async def eliminar_folio_automatico(folio: str):
     """Elimina folio automáticamente después del tiempo límite"""
     try:
+        # Obtener user_id del folio
+        user_id = None
+        if folio in timers_activos:
+            user_id = timers_activos[folio]["user_id"]
+        
         # Eliminar de base de datos
         supabase.table("folios_registrados").delete().eq("folio", folio).execute()
         supabase.table("borradores_registros").delete().eq("folio", folio).execute()
         
-        # Notificar al usuario
-        await bot.send_message(
-            user_id,
-            f"⏰ TIEMPO AGOTADO\n\n"
-            f"El folio {folio} ha sido eliminado del sistema por falta de pago.\n\n"
-            f"Para tramitar un nuevo permiso utilize /permiso"
-        )
+        # Notificar al usuario si está disponible
+        if user_id:
+            await bot.send_message(
+                user_id,
+                f"⏰ TIEMPO AGOTADO\n\n"
+                f"El folio {folio} ha sido eliminado del sistema por falta de pago.\n\n"
+                f"Para tramitar un nuevo permiso utilize /permiso"
+            )
         
-        # Limpiar timer
-        if user_id in timers_activos:
-            del timers_activos[user_id]
+        # Limpiar timers
+        limpiar_timer_folio(folio)
             
     except Exception as e:
         print(f"Error eliminando folio {folio}: {e}")
 
-async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
+async def enviar_recordatorio(folio: str, minutos_restantes: int):
     """Envía recordatorios de pago"""
     try:
+        if folio not in timers_activos:
+            return  # Timer ya fue cancelado
+            
+        user_id = timers_activos[folio]["user_id"]
+        
         await bot.send_message(
             user_id,
             f"⚡ RECORDATORIO DE PAGO MORELOS\n\n"
@@ -102,44 +113,85 @@ async def enviar_recordatorio(user_id: int, folio: str, minutos_restantes: int):
             f"📸 Envíe su comprobante de pago (imagen) para validar el trámite."
         )
     except Exception as e:
-        print(f"Error enviando recordatorio a {user_id}: {e}")
+        print(f"Error enviando recordatorio para folio {folio}: {e}")
 
 async def iniciar_timer_pago(user_id: int, folio: str):
-    """Inicia el timer de 2 horas con recordatorios"""
+    """Inicia el timer de 2 horas con recordatorios para un folio específico"""
     async def timer_task():
         start_time = datetime.now()
+        print(f"[TIMER] Iniciado para folio {folio}, usuario {user_id}")
         
         # Recordatorios cada 30 minutos
         for minutos in [30, 60, 90]:
             await asyncio.sleep(30 * 60)  # 30 minutos
             
             # Verificar si el timer sigue activo
-            if user_id not in timers_activos:
+            if folio not in timers_activos:
+                print(f"[TIMER] Cancelado para folio {folio}")
                 return  # Timer cancelado (usuario pagó)
                 
             minutos_restantes = 120 - minutos
-            await enviar_recordatorio(user_id, folio, minutos_restantes)
+            await enviar_recordatorio(folio, minutos_restantes)
         
         # Último recordatorio a los 110 minutos (faltan 10)
         await asyncio.sleep(20 * 60)  # 20 minutos más
-        if user_id in timers_activos:
-            await enviar_recordatorio(user_id, folio, 10)
+        if folio in timers_activos:
+            await enviar_recordatorio(folio, 10)
         
         # Esperar 10 minutos finales
         await asyncio.sleep(10 * 60)
         
         # Si llegamos aquí, se acabó el tiempo
-        if user_id in timers_activos:
-            await eliminar_folio_automatico(user_id, folio)
+        if folio in timers_activos:
+            print(f"[TIMER] Expirado para folio {folio}")
+            await eliminar_folio_automatico(folio)
     
     # Crear y guardar el task
     task = asyncio.create_task(timer_task())
-    timers_activos[user_id] = {
+    timers_activos[folio] = {
         "task": task,
-        "folio": folio,
+        "user_id": user_id,
         "start_time": datetime.now()
     }
+    
+    # Agregar folio a la lista del usuario
+    if user_id not in user_folios:
+        user_folios[user_id] = []
+    user_folios[user_id].append(folio)
+    
+    print(f"[SISTEMA] Timer iniciado para folio {folio}, total timers activos: {len(timers_activos)}")
 
+def cancelar_timer_folio(folio: str):
+    """Cancela el timer de un folio específico cuando el usuario paga"""
+    if folio in timers_activos:
+        timers_activos[folio]["task"].cancel()
+        user_id = timers_activos[folio]["user_id"]
+        
+        # Remover de estructuras de datos
+        del timers_activos[folio]
+        
+        if user_id in user_folios and folio in user_folios[user_id]:
+            user_folios[user_id].remove(folio)
+            if not user_folios[user_id]:  # Si no quedan folios, eliminar entrada
+                del user_folios[user_id]
+        
+        print(f"[SISTEMA] Timer cancelado para folio {folio}, timers restantes: {len(timers_activos)}")
+
+def limpiar_timer_folio(folio: str):
+    """Limpia todas las referencias de un folio tras expirar"""
+    if folio in timers_activos:
+        user_id = timers_activos[folio]["user_id"]
+        del timers_activos[folio]
+        
+        if user_id in user_folios and folio in user_folios[user_id]:
+            user_folios[user_id].remove(folio)
+            if not user_folios[user_id]:
+                del user_folios[user_id]
+
+def obtener_folios_usuario(user_id: int) -> list:
+    """Obtiene todos los folios activos de un usuario"""
+    return user_folios.get(user_id, [])
+    
 def cancelar_timer(user_id: int):
     """Cancela el timer cuando el usuario paga"""
     if user_id in timers_activos:
