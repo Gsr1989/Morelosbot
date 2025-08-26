@@ -221,7 +221,8 @@ class PermisoForm(StatesGroup):
 
 # ------------ PDF FUNCTIONS ------------
 def generar_pdf_principal(datos: dict) -> 
-str: 
+str:
+    
     doc = fitz.open(PLANTILLA_PDF) 
     pg = doc[0]
 
