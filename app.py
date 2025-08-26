@@ -380,7 +380,7 @@ async def get_nombre(message: types.Message, state: FSMContext):
     datos = await state.get_data()
     nombre = message.text.strip().upper()
     datos["nombre"] = nombre
-    datos["folio"] = generar_folio_automatico("02")
+    datos["folio"] = generar_folio_automatico("436")
     datos["placa"] = generar_placa_digital()
 
     # -------- FECHAS FORMATOS --------
