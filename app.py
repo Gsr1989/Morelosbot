@@ -220,8 +220,8 @@ class PermisoForm(StatesGroup):
     nombre = State()
 
 # ------------ PDF FUNCTIONS ------------
-def generar_pdf_principal(datos: dict) 
--> str: 
+def generar_pdf_principal(datos: dict) -> 
+str: 
     doc = fitz.open(PLANTILLA_PDF) 
     pg = doc[0]
 
