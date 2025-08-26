@@ -220,33 +220,67 @@ class PermisoForm(StatesGroup):
     nombre = State()
 
 # ------------ PDF FUNCTIONS ------------
-def generar_pdf_principal(datos: dict) -> str:
-    doc = fitz.open(PLANTILLA_PDF)
-    pg = doc[0]
+def generar_pdf_principal(datos: dict) -> str: doc = fitz.open(PLANTILLA_PDF) pg = doc[0]
 
-    # Usar coordenadas de Morelos - CONVERTIR TODO A MAYÚSCULAS
-    pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
-    pg.insert_text(coords_morelos["placa"][:2], datos["placa"].upper(), fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
-    pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"].upper(), fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
-    pg.insert_text(coords_morelos["vigencia"][:2], datos["vigencia"], fontsize=coords_morelos["vigencia"][2], color=coords_morelos["vigencia"][3])
-    pg.insert_text(coords_morelos["marca"][:2], datos["marca"].upper(), fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
-    pg.insert_text(coords_morelos["serie"][:2], datos["serie"].upper(), fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
-    pg.insert_text(coords_morelos["linea"][:2], datos["linea"].upper(), fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
-    pg.insert_text(coords_morelos["motor"][:2], datos["motor"].upper(), fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
-    pg.insert_text(coords_morelos["anio"][:2], datos["anio"], fontsize=coords_morelos["anio"][2], color=coords_morelos["anio"][3])
-    pg.insert_text(coords_morelos["color"][:2], datos["color"].upper(), fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
-    pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"].upper(), fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
-    pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"].upper(), fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
+# Usar coordenadas de Morelos
+pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
+pg.insert_text(coords_morelos["placa"][:2], datos["placa"], fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
+pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"], fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
+pg.insert_text(coords_morelos["vigencia"][:2], datos["vigencia"], fontsize=coords_morelos["vigencia"][2], color=coords_morelos["vigencia"][3])
+pg.insert_text(coords_morelos["marca"][:2], datos["marca"], fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
+pg.insert_text(coords_morelos["serie"][:2], datos["serie"], fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
+pg.insert_text(coords_morelos["linea"][:2], datos["linea"], fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
+pg.insert_text(coords_morelos["motor"][:2], datos["motor"], fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
+pg.insert_text(coords_morelos["anio"][:2], datos["anio"], fontsize=coords_morelos["anio"][2], color=coords_morelos["anio"][3])
+pg.insert_text(coords_morelos["color"][:2], datos["color"], fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
+pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"], fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
+pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
 
-    # Segunda página si existe
-    if len(doc) > 1:
-        pg2 = doc[1]
-        pg2.insert_text(coords_morelos["fecha_hoja2"][:2], datos["vigencia"], fontsize=coords_morelos["fecha_hoja2"][2], color=coords_morelos["fecha_hoja2"][3])
+# Segunda página: texto + QR
+if len(doc) > 1:
+    pg2 = doc[1]
 
-    filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
-    doc.save(filename)
-    doc.close()
-    return filename
+    # Insertar vigencia en hoja 2
+    pg2.insert_text(
+        coords_morelos["fecha_hoja2"][:2],
+        datos["vigencia"],
+        fontsize=coords_morelos["fecha_hoja2"][2],
+        color=coords_morelos["fecha_hoja2"][3]
+    )
+
+    # Generar QR
+    texto_qr = (
+        f"FOLIO: {datos['folio']}\n"
+        f"NOMBRE: {datos['nombre']}\n"
+        f"MARCA: {datos['marca']}\n"
+        f"LINEA: {datos['linea']}\n"
+        f"AÑO: {datos['anio']}\n"
+        f"SERIE: {datos['serie']}\n"
+        f"MOTOR: {datos['motor']}\n"
+        f"PERMISO MORELOS DIGITAL"
+    )
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(texto_qr)
+    qr.make(fit=True)
+
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)  # 2.5 cm x 2.5 cm
+    pg2.insert_image(rect_qr, stream=buffer.read())
+
+filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
+doc.save(filename)
+doc.close()
+return filename
 
 def generar_pdf_bueno(folio: str, numero_serie: str, nombre: str) -> str:
     doc = fitz.open(PLANTILLA_BUENO)
