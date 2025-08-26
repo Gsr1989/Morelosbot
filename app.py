@@ -157,19 +157,19 @@ def inicializar_folio_desde_supabase():
 
         if response.data:
             ultimo_folio = response.data[0]["folio"]
-            # Extraer número del folio (eliminar prefijo "02")
-            if ultimo_folio.startswith("02") and len(ultimo_folio) > 2:
+            # Extraer número del folio (eliminar prefijo "436")
+            if ultimo_folio.startswith("436") and len(ultimo_folio) > 3:
                 try:
-                    numero = int(ultimo_folio[2:])  # Quitar "02" del inicio
+                    numero = int(ultimo_folio[3:])  # Quitar "436" del inicio
                     folio_counter["count"] = numero + 1
-                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 02{folio_counter['count']}")
+                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 436{folio_counter['count']}")
                 except ValueError:
                     folio_counter["count"] = 1
             else:
                 folio_counter["count"] = 1
         else:
             folio_counter["count"] = 1
-            print("[INFO] No se encontraron folios de Morelos, iniciando desde 021")
+            print("[INFO] No se encontraron folios de Morelos, iniciando desde 4361")
     except Exception as e:
         print(f"[ERROR] Al inicializar folio Morelos: {e}")
         folio_counter["count"] = 1
