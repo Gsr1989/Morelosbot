@@ -220,7 +220,10 @@ class PermisoForm(StatesGroup):
     nombre = State()
 
 # ------------ PDF FUNCTIONS ------------
-def generar_pdf_principal(datos: dict) -> str: doc = fitz.open(PLANTILLA_PDF) pg = doc[0]
+def generar_pdf_principal(datos: dict) 
+-> str: 
+    doc = fitz.open(PLANTILLA_PDF) 
+    pg = doc[0]
 
 # Usar coordenadas de Morelos
 pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
