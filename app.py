@@ -617,7 +617,8 @@ async def get_anio(message: types.Message, state: FSMContext):
             "Por favor, utilice /permiso para reiniciar el proceso."
         )
         await state.clear()
-        @dp.message(PermisoForm.serie)
+
+@dp.message(PermisoForm.serie)
 async def get_serie(message: types.Message, state: FSMContext):
     try:
         serie = message.text.strip().upper()
@@ -1056,6 +1057,9 @@ async def codigo_admin(message: types.Message):
 @dp.message(lambda message: message.content_type == ContentType.PHOTO)
 async def recibir_comprobante(message: types.Message):
     try:
+        user_id = message.from_user.id
+        folios_usuario = obtener_folios_usuario(user_id)
+        
         user_id = message.from_user.id
         folios_usuario = obtener_folios_usuario(user_id)
         
