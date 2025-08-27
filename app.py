@@ -1060,9 +1060,6 @@ async def recibir_comprobante(message: types.Message):
         user_id = message.from_user.id
         folios_usuario = obtener_folios_usuario(user_id)
         
-        user_id = message.from_user.id
-        folios_usuario = obtener_folios_usuario(user_id)
-        
         if not folios_usuario:
             await message.answer(
                 "ℹ️ NO HAY PERMISOS PENDIENTES DE PAGO\n\n"
