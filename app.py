@@ -235,31 +235,49 @@ def inicializar_folio_desde_supabase():
 
 def generar_folio_automatico() -> tuple:
     """Genera folio automático con prefijo 345"""
-    max_intentos = 5
+    max_intentos = 10  # Aumentar intentos
+    
     for intento in range(max_intentos):
         folio = f"345{folio_counter['count']}"
+        print(f"[DEBUG] Intento {intento+1}: Verificando folio {folio}")
+        
         try:
+            # Verificar conexión a Supabase primero
             response = supabase.table("folios_registrados") \
                 .select("folio") \
                 .eq("folio", folio) \
                 .execute()
             
-            if response.data:
-                print(f"[WARNING] Folio {folio} duplicado, incrementando contador...")
+            print(f"[DEBUG] Respuesta Supabase: {response}")
+            
+            if response.data and len(response.data) > 0:
+                print(f"[WARNING] Folio {folio} duplicado, incrementando...")
                 folio_counter["count"] += 1
                 continue
             
+            # Folio disponible
             folio_counter["count"] += 1
             print(f"[SUCCESS] Folio generado: {folio}")
             return folio, True, ""
+            
         except Exception as e:
-            print(f"[ERROR] Al verificar folio {folio}: {e}")
+            print(f"[ERROR] Intento {intento+1} - Error verificando folio {folio}: {e}")
+            
+            # Si es error de conexión, generar folio sin verificar
+            if intento >= 7:  # Después del intento 8, generar directo
+                folio_final = f"345{folio_counter['count']}"
+                folio_counter["count"] += 1
+                print(f"[FALLBACK] Generando folio sin verificar BD: {folio_final}")
+                return folio_final, True, ""
+                
             folio_counter["count"] += 1
             continue
     
-    error_msg = f"Sistema sobrecargado, no se pudo generar folio único después de {max_intentos} intentos"
-    print(f"[ERROR CRÍTICO] {error_msg}")
-    return "", False, error_msg
+    # Si llegamos aquí, usar timestamp como fallback
+    import time
+    timestamp_folio = f"345{int(time.time())}"
+    print(f"[FALLBACK FINAL] Usando timestamp: {timestamp_folio}")
+    return timestamp_folio, True, ""
 
 def generar_placa_digital():
     """Genera placa digital para el vehículo"""
