@@ -359,39 +359,47 @@ def generar_pdf_principal(datos: dict) -> tuple:
         pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
         
         # QR DINÁMICO EN HOJA 1 (CAMBIO PRINCIPAL)
-        img_qr, url_qr = generar_qr_dinamico_morelos(datos["folio"])
-        if img_qr:
-            buf = BytesIO()
-            img_qr.save(buf, format="PNG")
-            buf.seek(0)
-            qr_pix = fitz.Pixmap(buf.read())
-            
-            # Insertar QR en HOJA 1 usando coordenadas específicas
-            rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)  # Mismo lugar que antes pero en hoja 1
-            pg.insert_image(rect_qr, pixmap=qr_pix, overlay=True)
-            print(f"[QR MORELOS] QR dinámico insertado en HOJA 1: {url_qr}")
-        else:
-            # Fallback si falla el QR dinámico
-            texto_qr_fallback = (
-                f"FOLIO: {datos['folio']}\n"
-                f"NOMBRE: {datos['nombre']}\n"
-                f"MARCA: {datos['marca']}\n"
-                f"LINEA: {datos['linea']}\n"
-                f"AÑO: {datos['anio']}\n"
-                f"SERIE: {datos['serie']}\n"
-                f"MOTOR: {datos['motor']}\n"
-                f"PERMISO MORELOS DIGITAL"
-            )
-            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=2)
-            qr.add_data(texto_qr_fallback)
-            qr.make(fit=True)
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            buffer = BytesIO()
-            qr_img.save(buffer, format="PNG")
-            buffer.seek(0)
-            rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)
-            pg.insert_image(rect_qr, stream=buffer.read())
-            print(f"[QR MORELOS] QR fallback insertado en HOJA 1")
+# Coordenadas del QR:
+# suma para subir, resta para bajar (coordenada Y)
+# suma para derecha, resta para izquierda (coordenada X)
+qr_x = 600      # Posición X - suma para derecha, resta para izquierda
+qr_y = 200      # Posición Y - suma para subir, resta para bajar
+qr_width = 90   # Ancho del QR
+qr_height = 90  # Alto del QR
+
+img_qr, url_qr = generar_qr_dinamico_morelos(datos["folio"])
+if img_qr:
+    buf = BytesIO()
+    img_qr.save(buf, format="PNG")
+    buf.seek(0)
+    qr_pix = fitz.Pixmap(buf.read())
+    
+    # Insertar QR en HOJA 1 usando coordenadas específicas
+    rect_qr = fitz.Rect(qr_x, qr_y, qr_x + qr_width, qr_y + qr_height)  # Mismo lugar que antes pero en hoja 1
+    pg.insert_image(rect_qr, pixmap=qr_pix, overlay=True)
+    print(f"[QR MORELOS] QR dinámico insertado en HOJA 1: {url_qr}")
+else:
+    # Fallback si falla el QR dinámico
+    texto_qr_fallback = (
+        f"FOLIO: {datos['folio']}\n"
+        f"NOMBRE: {datos['nombre']}\n"
+        f"MARCA: {datos['marca']}\n"
+        f"LINEA: {datos['linea']}\n"
+        f"AÑO: {datos['anio']}\n"
+        f"SERIE: {datos['serie']}\n"
+        f"MOTOR: {datos['motor']}\n"
+        f"PERMISO MORELOS DIGITAL"
+    )
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=2)
+    qr.add_data(texto_qr_fallback)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format="PNG")
+    buffer.seek(0)
+    rect_qr = fitz.Rect(qr_x, qr_y, qr_x + qr_width, qr_y + qr_height)
+    pg.insert_image(rect_qr, stream=buffer.read())
+    print(f"[QR MORELOS] QR fallback insertado en HOJA 1")
         
         # Si hay hoja 2, también insertar fecha ahí
         if len(doc) > 1:
