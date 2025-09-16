@@ -353,93 +353,68 @@ class PermisoForm(StatesGroup):
 # ------------ PDF FUNCTIONS CON QR DINÁMICO ------------
 def generar_pdf_principal(datos: dict) -> tuple:
     """
-    Genera PDF principal con QR dinámico
+    Genera PDF principal con QR dinámico EN LA HOJA 1 (página 0)
+    y fechas ya vienen en dd/mm/yyyy desde 'datos'.
     Returns: (filename: str, success: bool, error_msg: str)
     """
     try:
         doc = fitz.open(PLANTILLA_PDF)
         pg = doc[0]
 
-        # Usar coordenadas de Morelos
-        pg.insert_text(coords_morelos["folio"][:2], datos["folio"], fontsize=coords_morelos["folio"][2], color=coords_morelos["folio"][3])
-        pg.insert_text(coords_morelos["placa"][:2], datos["placa"], fontsize=coords_morelos["placa"][2], color=coords_morelos["placa"][3])
-        pg.insert_text(coords_morelos["fecha"][:2], datos["fecha"], fontsize=coords_morelos["fecha"][2], color=coords_morelos["fecha"][3])
-        pg.insert_text(coords_morelos["vigencia"][:2], datos["vigencia"], fontsize=coords_morelos["vigencia"][2], color=coords_morelos["vigencia"][3])
-        pg.insert_text(coords_morelos["marca"][:2], datos["marca"], fontsize=coords_morelos["marca"][2], color=coords_morelos["marca"][3])
-        pg.insert_text(coords_morelos["serie"][:2], datos["serie"], fontsize=coords_morelos["serie"][2], color=coords_morelos["serie"][3])
-        pg.insert_text(coords_morelos["linea"][:2], datos["linea"], fontsize=coords_morelos["linea"][2], color=coords_morelos["linea"][3])
-        pg.insert_text(coords_morelos["motor"][:2], datos["motor"], fontsize=coords_morelos["motor"][2], color=coords_morelos["motor"][3])
-        pg.insert_text(coords_morelos["anio"][:2], datos["anio"], fontsize=coords_morelos["anio"][2], color=coords_morelos["anio"][3])
-        pg.insert_text(coords_morelos["color"][:2], datos["color"], fontsize=coords_morelos["color"][2], color=coords_morelos["color"][3])
-        pg.insert_text(coords_morelos["tipo"][:2], datos["tipo"], fontsize=coords_morelos["tipo"][2], color=coords_morelos["tipo"][3])
-        pg.insert_text(coords_morelos["nombre"][:2], datos["nombre"], fontsize=coords_morelos["nombre"][2], color=coords_morelos["nombre"][3])
+        # Texto en HOJA 1 usando tus coords
+        pg.insert_text(coords_morelos["folio"][:2],   datos["folio"],   fontsize=coords_morelos["folio"][2],   color=coords_morelos["folio"][3])
+        pg.insert_text(coords_morelos["placa"][:2],   datos["placa"],   fontsize=coords_morelos["placa"][2],   color=coords_morelos["placa"][3])
+        pg.insert_text(coords_morelos["fecha"][:2],   datos["fecha"],   fontsize=coords_morelos["fecha"][2],   color=coords_morelos["fecha"][3])
+        pg.insert_text(coords_morelos["vigencia"][:2],datos["vigencia"],fontsize=coords_morelos["vigencia"][2],color=coords_morelos["vigencia"][3])
+        pg.insert_text(coords_morelos["marca"][:2],   datos["marca"],   fontsize=coords_morelos["marca"][2],   color=coords_morelos["marca"][3])
+        pg.insert_text(coords_morelos["serie"][:2],   datos["serie"],   fontsize=coords_morelos["serie"][2],   color=coords_morelos["serie"][3])
+        pg.insert_text(coords_morelos["linea"][:2],   datos["linea"],   fontsize=coords_morelos["linea"][2],   color=coords_morelos["linea"][3])
+        pg.insert_text(coords_morelos["motor"][:2],   datos["motor"],   fontsize=coords_morelos["motor"][2],   color=coords_morelos["motor"][3])
+        pg.insert_text(coords_morelos["anio"][:2],    datos["anio"],    fontsize=coords_morelos["anio"][2],    color=coords_morelos["anio"][3])
+        pg.insert_text(coords_morelos["color"][:2],   datos["color"],   fontsize=coords_morelos["color"][2],   color=coords_morelos["color"][3])
+        pg.insert_text(coords_morelos["tipo"][:2],    datos["tipo"],    fontsize=coords_morelos["tipo"][2],    color=coords_morelos["tipo"][3])
+        pg.insert_text(coords_morelos["nombre"][:2],  datos["nombre"],  fontsize=coords_morelos["nombre"][2],  color=coords_morelos["nombre"][3])
 
-        # Segunda página: QR DINÁMICO (MODIFICACIÓN PRINCIPAL)
-        if len(doc) > 1:
-            pg2 = doc[1]
+        # ===== QR DINÁMICO EN HOJA 1 =====
+        img_qr, url_qr = generar_qr_dinamico_morelos(datos["folio"])
+        if img_qr:
+            buf = BytesIO()
+            img_qr.save(buf, format="PNG")
+            buf.seek(0)
+            qr_pix = fitz.Pixmap(buf.read())
 
-            # Insertar vigencia en hoja 2
-            pg2.insert_text(
-                coords_morelos["fecha_hoja2"][:2],
-                datos["vigencia"],
-                fontsize=coords_morelos["fecha_hoja2"][2],
-                color=coords_morelos["fecha_hoja2"][3]
+            # 2.5 cm x 2.5 cm en puntos (≈ 70.87)
+            rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)
+            pg.insert_image(rect_qr, pixmap=qr_pix, overlay=True)
+            print(f"[QR MORELOS] QR dinámico insertado en HOJA 1: {url_qr}")
+        else:
+            # Fallback: QR con texto
+            texto_qr_fallback = (
+                f"FOLIO: {datos['folio']}\n"
+                f"NOMBRE: {datos['nombre']}\n"
+                f"MARCA: {datos['marca']}\n"
+                f"LINEA: {datos['linea']}\n"
+                f"AÑO: {datos['anio']}\n"
+                f"SERIE: {datos['serie']}\n"
+                f"MOTOR: {datos['motor']}\n"
+                f"PERMISO MORELOS DIGITAL"
             )
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=2)
+            qr.add_data(texto_qr_fallback)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            buffer = BytesIO()
+            qr_img.save(buffer, format="PNG")
+            buffer.seek(0)
+            rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)
+            pg.insert_image(rect_qr, stream=buffer.read())
+            print(f"[QR MORELOS] QR fallback (texto) insertado en HOJA 1")
 
-            # GENERAR QR DINÁMICO (CAMBIO PRINCIPAL)
-            img_qr, url_qr = generar_qr_dinamico_morelos(datos["folio"])
-            
-            if img_qr:
-                # Convertir imagen PIL a bytes para PyMuPDF
-                buf = BytesIO()
-                img_qr.save(buf, format="PNG")
-                buf.seek(0)
-                qr_pix = fitz.Pixmap(buf.read())
-
-                # Insertar QR dinámico en las coordenadas existentes
-                rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)  # 2.5 cm x 2.5 cm
-                pg2.insert_image(
-                    rect_qr,
-                    pixmap=qr_pix,
-                    overlay=True
-                )
-                print(f"[QR MORELOS] QR dinámico insertado en PDF: {url_qr}")
-            else:
-                # Fallback: usar texto estático si falla el QR dinámico
-                texto_qr_fallback = (
-                    f"FOLIO: {datos['folio']}\n"
-                    f"NOMBRE: {datos['nombre']}\n"
-                    f"MARCA: {datos['marca']}\n"
-                    f"LINEA: {datos['linea']}\n"
-                    f"AÑO: {datos['anio']}\n"
-                    f"SERIE: {datos['serie']}\n"
-                    f"MOTOR: {datos['motor']}\n"
-                    f"PERMISO MORELOS DIGITAL"
-                )
-
-                qr = qrcode.QRCode(
-                    version=1,
-                    error_correction=qrcode.constants.ERROR_CORRECT_L,
-                    box_size=10,
-                    border=2,
-                )
-                qr.add_data(texto_qr_fallback)
-                qr.make(fit=True)
-
-                qr_img = qr.make_image(fill_color="black", back_color="white")
-                buffer = BytesIO()
-                qr_img.save(buffer, format="PNG")
-                buffer.seek(0)
-
-                rect_qr = fitz.Rect(665, 282, 665 + 70.87, 282 + 70.87)
-                pg2.insert_image(rect_qr, stream=buffer.read())
-                print(f"[QR MORELOS] QR fallback (texto) insertado")
-
-        filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
+        filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"}
         doc.save(filename)
         doc.close()
         return filename, True, ""
-        
+
     except Exception as e:
         error_msg = f"Error generando PDF principal: {str(e)}"
         print(f"[ERROR PDF] {error_msg}")
