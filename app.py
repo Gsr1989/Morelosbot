@@ -198,11 +198,11 @@ def obtener_folios_usuario(user_id: int) -> list:
     """Obtiene todos los folios activos de un usuario"""
     return user_folios.get(user_id, [])
 
-# FOLIO SYSTEM CON PREFIJO 345
+# FOLIO SYSTEM CON PREFIJO 456
 folio_counter = {"count": 1}
 
 def inicializar_folio_desde_supabase():
-    """Inicializa el contador de folios desde el último registro en Supabase con prefijo 345"""
+    """Inicializa el contador de folios desde el último registro en Supabase con prefijo 456"""
     try:
         response = supabase.table("folios_registrados") \
             .select("folio") \
@@ -217,21 +217,21 @@ def inicializar_folio_desde_supabase():
                 try:
                     numero = int(ultimo_folio[3:])
                     folio_counter["count"] = numero + 1
-                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 345{folio_counter['count']}")
+                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 456{folio_counter['count']}")
                 except ValueError:
-                    print("[ERROR] Formato de folio inválido en BD, iniciando desde 3451")
+                    print("[ERROR] Formato de folio inválido en BD, iniciando desde 4561")
                     folio_counter["count"] = 1
             else:
-                print("[INFO] No hay folios con prefijo 345, iniciando desde 3451")
+                print("[INFO] No hay folios con prefijo 345, iniciando desde 4561")
                 folio_counter["count"] = 1
         else:
-            print("[INFO] No se encontraron folios de Morelos, iniciando desde 3451")
+            print("[INFO] No se encontraron folios de Morelos, iniciando desde 4561")
             folio_counter["count"] = 1
-        print(f"[SISTEMA] Próximo folio a generar: 345{folio_counter['count']}")
+        print(f"[SISTEMA] Próximo folio a generar: 456{folio_counter['count']}")
     except Exception as e:
         print(f"[ERROR CRÍTICO] Al inicializar folio Morelos: {e}")
         folio_counter["count"] = 1
-        print("[FALLBACK] Iniciando contador desde 3451")
+        print("[FALLBACK] Iniciando contador desde 4561")
 
 def generar_folio_automatico() -> tuple:
     """
