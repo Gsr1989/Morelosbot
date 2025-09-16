@@ -951,11 +951,15 @@ async def lifespan(app: FastAPI):
     # Inicializar folio desde supabase
     inicializar_folio_desde_supabase()
 
+    # Asegurar que NO hay webhook activo (requisito para polling)
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print(f"[WARN] delete_webhook: {e}")
+
     # Arrancar polling del bot en background (Aiogram v3)
     from aiogram.enums import UpdateType
-    allowed = [u.value for u in UpdateType]  # ['message', 'edited_message', ...]
-    # Si prefieres que Aiogram detecte solo lo que usas:
-    # allowed = dp.resolve_used_update_types()
+    allowed = [u.value for u in UpdateType]  # o usa: dp.resolve_used_update_types()
 
     task = asyncio.create_task(
         dp.start_polling(bot, allowed_updates=allowed)
