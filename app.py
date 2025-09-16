@@ -773,33 +773,104 @@ async def folios_cmd(message: types.Message):
         print(f"[ERROR] folios_cmd: {e}")
         await message.answer("**❌ ERROR CONSULTANDO FOLIOS**\n\nNo se pudieron consultar sus folios activos.\nIntente nuevamente en unos momentos.", parse_mode="Markdown")
 
-# FASTAPI INTEGRATION
+# FUNCIONES AUXILIARES PARA WEBHOOK
+async def configurar_webhook():
+    """Configura el webhook de Telegram automáticamente"""
+    try:
+        webhook_url = f"{BASE_URL}/webhook"
+        print(f"[WEBHOOK] Configurando webhook: {webhook_url}")
+        
+        # Eliminar webhook anterior
+        await bot.delete_webhook()
+        await asyncio.sleep(1)
+        
+        # Configurar nuevo webhook
+        result = await bot.set_webhook(url=webhook_url)
+        if result:
+            print(f"[WEBHOOK] ✅ Configurado correctamente")
+        else:
+            print(f"[WEBHOOK] ❌ Error en configuración")
+            
+        # Verificar webhook
+        webhook_info = await bot.get_webhook_info()
+        print(f"[WEBHOOK] Estado: URL={webhook_info.url}, Pendiente={webhook_info.pending_update_count}")
+        
+    except Exception as e:
+        print(f"[ERROR WEBHOOK CONFIG] {e}")
+
+# FASTAPI INTEGRATION CORREGIDA
 app = FastAPI()
 
 @app.get("/")
 async def root():
-    return {"message": "Bot Telegram - Sistema de Permisos Morelos", "status": "running"}
+    return {"message": "Bot Telegram - Sistema de Permisos Morelos", "status": "running", "webhook": f"{BASE_URL}/webhook"}
 
 @app.post("/webhook")
-async def webhook(request: Request):
+@app.post("/webhook/{token}")
+async def webhook(request: Request, token: str = None):
+    """Endpoint para recibir updates de Telegram - Compatible con ambos formatos"""
     try:
-        update = types.Update.model_validate(await request.json())
+        # Log de la petición recibida
+        print(f"[WEBHOOK] Recibida petición: {request.method} {request.url.path}")
+        
+        # Procesar update de Telegram
+        update_data = await request.json()
+        update = types.Update.model_validate(update_data)
+        
+        # Log del update
+        if update.message:
+            user_id = update.message.from_user.id
+            username = update.message.from_user.username or "Sin username"
+            text = update.message.text or "[Multimedia/Comando]"
+            print(f"[WEBHOOK] Mensaje de {username} ({user_id}): {text}")
+        
+        # Alimentar al dispatcher
         await dp.feed_update(bot, update)
-        return {"status": "ok"}
+        
+        return {"status": "ok", "timestamp": datetime.now().isoformat()}
+        
     except Exception as e:
         print(f"[ERROR WEBHOOK] {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "timestamp": datetime.now().isoformat()}
+
+@app.get("/webhook/info")
+async def webhook_info():
+    """Endpoint para verificar el estado del webhook"""
+    try:
+        webhook_info = await bot.get_webhook_info()
+        return {
+            "url": webhook_info.url,
+            "has_custom_certificate": webhook_info.has_custom_certificate,
+            "pending_update_count": webhook_info.pending_update_count,
+            "last_error_date": webhook_info.last_error_date,
+            "last_error_message": webhook_info.last_error_message,
+            "max_connections": webhook_info.max_connections
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print("[STARTUP] Inicializando sistema...")
     inicializar_folio_desde_supabase()
+    
+    # Configurar webhook automáticamente
+    await configurar_webhook()
+    
     print(f"[STARTUP] Bot iniciado - Sistema de Permisos Morelos")
     print(f"[STARTUP] Próximo folio: 345{folio_counter['count']}")
     yield
     # Shutdown
     print("[SHUTDOWN] Cerrando sistema...")
+    
+    # Eliminar webhook
+    try:
+        await bot.delete_webhook()
+        print("[SHUTDOWN] Webhook eliminado")
+    except:
+        pass
+    
     # Cancelar todos los timers activos
     for folio in list(timers_activos.keys()):
         timers_activos[folio]["task"].cancel()
