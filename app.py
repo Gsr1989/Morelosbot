@@ -234,15 +234,20 @@ def inicializar_folio_desde_supabase():
         print("[FALLBACK] Iniciando contador desde 3451")
 
 def generar_folio_automatico() -> tuple:
-    """Genera folio automático con prefijo 345"""
-    max_intentos = 10  # Aumentar intentos
+    """
+    Genera folio automático con prefijo 456 secuencial
+    4561, 4562, 4563... al infinito
+    Si hay duplicados, se brinca al siguiente
+    """
+    max_intentos = 50  # Permitir más intentos
     
     for intento in range(max_intentos):
-        folio = f"345{folio_counter['count']}"
-        print(f"[DEBUG] Intento {intento+1}: Verificando folio {folio}")
+        # Generar folio secuencial: 456 + contador
+        folio = f"456{folio_counter['count']}"
+        print(f"[DEBUG] Intento {intento+1}: Probando folio {folio}")
         
         try:
-            # Verificar conexión a Supabase primero
+            # Verificar si existe en la base de datos
             response = supabase.table("folios_registrados") \
                 .select("folio") \
                 .eq("folio", folio) \
@@ -251,34 +256,36 @@ def generar_folio_automatico() -> tuple:
             print(f"[DEBUG] Respuesta Supabase: {response}")
             
             if response.data and len(response.data) > 0:
-                print(f"[WARNING] Folio {folio} duplicado, incrementando...")
-                folio_counter["count"] += 1
+                # FOLIO DUPLICADO - BRINCAR AL SIGUIENTE
+                print(f"[WARNING] Folio {folio} ya existe, brincando al siguiente...")
+                folio_counter["count"] += 1  # Incrementar y probar el siguiente
                 continue
             
-            # Folio disponible
-            folio_counter["count"] += 1
-            print(f"[SUCCESS] Folio generado: {folio}")
+            # FOLIO DISPONIBLE
+            print(f"[SUCCESS] Folio disponible: {folio}")
+            folio_counter["count"] += 1  # Incrementar para el próximo
             return folio, True, ""
             
         except Exception as e:
-            print(f"[ERROR] Intento {intento+1} - Error verificando folio {folio}: {e}")
-            
-            # Si es error de conexión, generar folio sin verificar
-            if intento >= 7:  # Después del intento 8, generar directo
-                folio_final = f"345{folio_counter['count']}"
+            print(f"[ERROR] Verificando folio {folio}: {e}")
+            # En caso de error de conexión, generar sin verificar
+            if intento >= 45:  # Últimos 5 intentos
+                folio_final = f"456{folio_counter['count']}"
                 folio_counter["count"] += 1
-                print(f"[FALLBACK] Generando folio sin verificar BD: {folio_final}")
+                print(f"[FALLBACK] Generando folio sin verificar: {folio_final}")
                 return folio_final, True, ""
-                
+            
+            # Probar siguiente número
             folio_counter["count"] += 1
             continue
     
-    # Si llegamos aquí, usar timestamp como fallback
+    # Fallback final: usar timestamp
     import time
-    timestamp_folio = f"345{int(time.time())}"
-    print(f"[FALLBACK FINAL] Usando timestamp: {timestamp_folio}")
-    return timestamp_folio, True, ""
-
+    timestamp = int(time.time()) % 1000000  # Últimos 6 dígitos
+    folio_timestamp = f"456{timestamp}"
+    print(f"[FALLBACK FINAL] Usando timestamp: {folio_timestamp}")
+    return folio_timestamp, True, ""
+    
 def generar_placa_digital():
     """Genera placa digital para el vehículo"""
     archivo = "placas_digitales.txt"
