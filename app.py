@@ -761,13 +761,17 @@ async def get_nombre(message: types.Message, state: FSMContext):
         # Placa digital
         placa = generar_placa_digital()
 
-        # Fechas (CDMX/México)
+        # Fechas (CDMX/México) en dd/mm/yyyy para IMPRESIÓN
         tz = ZoneInfo("America/Mexico_City")
         ahora = datetime.now(tz)
-        fecha_iso = ahora.strftime("%Y-%m-%d")
         vigencia_dias = 30  # predeterminado
         vence = (ahora + timedelta(days=vigencia_dias))
-        fecha_ven_iso = vence.strftime("%Y-%m-%d")
+
+        # Para guardar en BD (ISO) y para imprimir (dd/mm/yyyy)
+        fecha_iso = ahora.date().isoformat()
+        fecha_ven_iso = vence.date().isoformat()
+        fecha_texto = ahora.strftime("%d/%m/%Y")
+        vigencia_texto = vence.strftime("%d/%m/%Y")
 
         mes_es = meses_es[ahora.strftime("%B")]
         mes_ven_es = meses_es[vence.strftime("%B")]
