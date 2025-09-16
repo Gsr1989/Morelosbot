@@ -361,10 +361,10 @@ def generar_pdf_principal(datos: dict) -> tuple:
         # Coordenadas del QR:
         # suma para subir, resta para bajar (coordenada Y)
         # suma para derecha, resta para izquierda (coordenada X)
-        qr_x = 500      # Posición X - suma para derecha, resta para izquierda
+        qr_x = 570      # Posición X - suma para derecha, resta para izquierda
         qr_y = 150      # Posición Y - suma para subir, resta para bajar
-        qr_width = 100   # Ancho del QR
-        qr_height = 100  # Alto del QR
+        qr_width = 110   # Ancho del QR
+        qr_height = 110  # Alto del QR
 
         img_qr, url_qr = generar_qr_dinamico_morelos(datos["folio"])
         if img_qr:
