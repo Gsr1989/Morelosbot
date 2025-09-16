@@ -552,18 +552,26 @@ async def handle_all_messages(message: types.Message, state: FSMContext):
         print(f"[ERROR] handle_all_messages: {e}")
         await message.answer("**❌ ERROR INTERNO**\n\nOcurrió un problema procesando su solicitud.\nPor favor, intente nuevamente.", parse_mode="Markdown")
 
+# Reemplaza la función procesar_solicitud_permiso con esta versión que tiene mejor debugging:
+
 async def procesar_solicitud_permiso(message: types.Message, state: FSMContext, data: dict):
     """Procesa la solicitud de permiso después de la confirmación"""
     try:
+        print(f"[DEBUG] Iniciando procesamiento para usuario {message.from_user.id}")
+        
         # Generar folio automático
         folio, success, error = generar_folio_automatico()
         if not success:
+            print(f"[ERROR] Error generando folio: {error}")
             await message.answer(f"**❌ ERROR GENERANDO FOLIO**\n\n{error}\n\nPor favor, intente nuevamente en unos minutos.", parse_mode="Markdown")
             await state.clear()
             return
 
+        print(f"[DEBUG] Folio generado: {folio}")
+
         # Generar placa digital
         placa = generar_placa_digital()
+        print(f"[DEBUG] Placa generada: {placa}")
         
         # Calcular fechas
         ahora = datetime.now(ZoneInfo("America/Mexico_City"))
@@ -572,6 +580,8 @@ async def procesar_solicitud_permiso(message: types.Message, state: FSMContext, 
         fecha_vencimiento_es = ahora + timedelta(days=30)
         mes_es = meses_es[fecha_vencimiento_es.strftime("%B")]
         vigencia_formato = f"{fecha_vencimiento_es.day} DE {mes_es} DEL {fecha_vencimiento_es.year}"
+
+        print(f"[DEBUG] Fechas calculadas: {fecha_expedicion} - {vigencia_formato}")
 
         # Preparar datos completos
         datos_completos = {
@@ -589,7 +599,10 @@ async def procesar_solicitud_permiso(message: types.Message, state: FSMContext, 
             "nombre": data["nombre"]
         }
 
-        # Guardar en base de datos
+        print(f"[DEBUG] Datos completos preparados: {datos_completos}")
+
+        # Guardar en base de datos PRIMERO
+        print(f"[DEBUG] Guardando en base de datos...")
         db_success, db_error = guardar_en_database(
             datos_completos,
             ahora.isoformat(),
@@ -599,25 +612,18 @@ async def procesar_solicitud_permiso(message: types.Message, state: FSMContext, 
         )
 
         if not db_success:
+            print(f"[ERROR] Error en BD: {db_error}")
             await message.answer(f"**❌ ERROR EN BASE DE DATOS**\n\n{db_error}\n\nPor favor, intente nuevamente.", parse_mode="Markdown")
             await state.clear()
             return
 
-        # Generar PDFs
-        pdf_principal, pdf_success, pdf_error = generar_pdf_principal(datos_completos)
-        if not pdf_success:
-            await message.answer(f"**❌ ERROR GENERANDO DOCUMENTO**\n\n{pdf_error}\n\nContacte al soporte técnico.", parse_mode="Markdown")
-            await state.clear()
-            return
-
-        pdf_comprobante, comp_success, comp_error = generar_pdf_bueno(folio, data["serie"], data["nombre"])
-        if not comp_success:
-            print(f"[WARNING] Error generando comprobante: {comp_error}")
+        print(f"[DEBUG] Guardado en BD exitoso")
 
         # Iniciar timer de 12 horas
         await iniciar_timer_pago(message.from_user.id, folio)
+        print(f"[DEBUG] Timer iniciado")
 
-        # Enviar documentos
+        # Enviar mensaje de éxito PRIMERO (sin PDFs)
         await message.answer(
             f"**✅ SOLICITUD PROCESADA EXITOSAMENTE**\n\n"
             f"**📋 FOLIO ASIGNADO:** {folio}\n"
@@ -625,41 +631,74 @@ async def procesar_solicitud_permiso(message: types.Message, state: FSMContext, 
             f"**📅 VIGENCIA:** {vigencia_formato}\n\n"
             f"**💰 INVERSIÓN:** El costo es el mismo de siempre\n"
             f"**⏰ TIEMPO LÍMITE:** 12 horas para efectuar el pago\n\n"
-            f"**📄 Sus documentos se enviarán a continuación.**\n"
+            f"**📄 Generando documentos...**\n"
             f"**📸 Envíe su comprobante de pago (imagen) para activar el permiso.**",
             parse_mode="Markdown"
         )
 
-        # Enviar PDF principal
-        try:
-            pdf_file = FSInputFile(pdf_principal)
-            await message.answer_document(
-                pdf_file,
-                caption=f"**📄 PERMISO DE CIRCULACIÓN - FOLIO {folio}**\n\n**⚠️ DOCUMENTO PROVISIONAL**\nSe activará automáticamente al confirmar su pago.",
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            print(f"[ERROR] Enviando PDF principal: {e}")
+        # Verificar que existan los archivos de plantilla
+        print(f"[DEBUG] Verificando archivos de plantilla...")
+        if not os.path.exists(PLANTILLA_PDF):
+            print(f"[ERROR] No existe el archivo: {PLANTILLA_PDF}")
+            await message.answer(f"**❌ ERROR TÉCNICO**\n\nArchivo de plantilla no encontrado: {PLANTILLA_PDF}\n\nContacte al administrador.", parse_mode="Markdown")
+            await state.clear()
+            return
 
-        # Enviar PDF comprobante si existe
-        if comp_success:
+        print(f"[DEBUG] Plantilla encontrada: {PLANTILLA_PDF}")
+
+        # Intentar generar PDF principal
+        print(f"[DEBUG] Generando PDF principal...")
+        pdf_principal, pdf_success, pdf_error = generar_pdf_principal(datos_completos)
+        
+        if not pdf_success:
+            print(f"[ERROR] Error generando PDF: {pdf_error}")
+            await message.answer(f"**❌ ERROR GENERANDO DOCUMENTO**\n\n{pdf_error}\n\nPero su folio {folio} está registrado correctamente.", parse_mode="Markdown")
+        else:
+            print(f"[DEBUG] PDF generado: {pdf_principal}")
+            
+            # Verificar que el archivo existe
+            if os.path.exists(pdf_principal):
+                print(f"[DEBUG] Archivo PDF existe, tamaño: {os.path.getsize(pdf_principal)} bytes")
+                
+                # Intentar enviar PDF
+                try:
+                    pdf_file = FSInputFile(pdf_principal)
+                    await message.answer_document(
+                        pdf_file,
+                        caption=f"**📄 PERMISO DE CIRCULACIÓN - FOLIO {folio}**\n\n**⚠️ DOCUMENTO PROVISIONAL**\nSe activará automáticamente al confirmar su pago.",
+                        parse_mode="Markdown"
+                    )
+                    print(f"[DEBUG] PDF enviado exitosamente")
+                except Exception as e:
+                    print(f"[ERROR] Error enviando PDF: {e}")
+                    await message.answer(f"**❌ ERROR ENVIANDO DOCUMENTO**\n\nError: {str(e)}\n\nSu folio {folio} está registrado correctamente.", parse_mode="Markdown")
+            else:
+                print(f"[ERROR] El archivo PDF no existe después de generarse")
+                await message.answer(f"**❌ ARCHIVO NO ENCONTRADO**\n\nEl PDF se generó pero no se encuentra.\n\nSu folio {folio} está registrado correctamente.", parse_mode="Markdown")
+
+        # Intentar generar comprobante
+        print(f"[DEBUG] Generando comprobante...")
+        pdf_comprobante, comp_success, comp_error = generar_pdf_bueno(folio, data["serie"], data["nombre"])
+        if comp_success and os.path.exists(pdf_comprobante):
             try:
                 comp_file = FSInputFile(pdf_comprobante)
-                await message.answer_document(
-                    comp_file,
-                    caption=f"**📋 COMPROBANTE DE TRÁMITE - FOLIO {folio}**",
-                    parse_mode="Markdown"
-                )
+                await message.answer_document(comp_file, caption=f"**📋 COMPROBANTE DE TRÁMITE - FOLIO {folio}**", parse_mode="Markdown")
+                print(f"[DEBUG] Comprobante enviado exitosamente")
             except Exception as e:
-                print(f"[ERROR] Enviando comprobante: {e}")
+                print(f"[ERROR] Error enviando comprobante: {e}")
+        else:
+            print(f"[WARNING] No se pudo generar comprobante: {comp_error}")
 
         await state.clear()
+        print(f"[DEBUG] Procesamiento completado para folio {folio}")
 
     except Exception as e:
-        print(f"[ERROR] procesar_solicitud_permiso: {e}")
+        print(f"[ERROR CRÍTICO] procesar_solicitud_permiso: {e}")
+        import traceback
+        traceback.print_exc()
         await message.answer("**❌ ERROR CRÍTICO**\n\nNo se pudo completar el proceso de solicitud.\nPor favor, contacte al soporte técnico.", parse_mode="Markdown")
         await state.clear()
-
+        
 async def manejar_comprobante_pago(message: types.Message, state: FSMContext):
     """Maneja los comprobantes de pago enviados por los usuarios"""
     try:
