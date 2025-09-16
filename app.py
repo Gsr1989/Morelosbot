@@ -202,29 +202,34 @@ def obtener_folios_usuario(user_id: int) -> list:
 folio_counter = {"count": 1}
 
 def inicializar_folio_desde_supabase():
-    """Inicializa el contador de folios desde el último registro en Supabase con prefijo 456"""
+    """Inicializa el contador de folios desde el último registro con prefijo 456"""
     try:
+        # Buscar el folio más alto con prefijo 456
         response = supabase.table("folios_registrados") \
             .select("folio") \
             .eq("entidad", "morelos") \
             .order("folio", desc=True) \
-            .limit(1) \
             .execute()
 
+        ultimo_numero = 0
         if response.data:
-            ultimo_folio = response.data[0]["folio"]
-            if ultimo_folio.startswith("456") and len(ultimo_folio) > 3:
-    numero = int(ultimo_folio[3:])  # Quitar "456" del inicio
-    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 456{folio_counter['count']}")
-else:
-    print("[INFO] No hay folios con prefijo 456, iniciando desde 4561")
-        else:
-            print("[INFO] No se encontraron folios de Morelos, iniciando desde 4561")
-            folio_counter["count"] = 1
-        print(f"[SISTEMA] Próximo folio a generar: 456{folio_counter['count']}")
+            for registro in response.data:
+                folio = registro["folio"]
+                if folio.startswith("456"):
+                    try:
+                        numero = int(folio[3:])  # Quitar "456" del inicio
+                        if numero > ultimo_numero:
+                            ultimo_numero = numero
+                    except ValueError:
+                        continue
+        
+        # Inicializar contador
+        folio_counter["count"] = ultimo_numero + 1
+        print(f"[INFO] Folio Morelos inicializado: último 456{ultimo_numero}, siguiente: 456{folio_counter['count']}")
+        
     except Exception as e:
-        print(f"[ERROR CRÍTICO] Al inicializar folio Morelos: {e}")
-        folio_counter["count"] = 1
+        print(f"[ERROR] Al inicializar folio Morelos: {e}")
+        folio_counter["count"] = 1  # Empezar en 4561
         print("[FALLBACK] Iniciando contador desde 4561")
 
 def generar_folio_automatico() -> tuple:
