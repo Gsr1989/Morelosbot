@@ -825,7 +825,7 @@ async def recibir_comprobante(message: types.Message):
         caption = (message.caption or "").upper()
         folio_detectado = ""
         for token in caption.replace("\n", " ").split():
-            if token.isdigit() and token.startswith("345"):
+            if token.isdigit() and token.startswith("456"):
                 folio_detectado = token
                 break
         
