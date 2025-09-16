@@ -213,17 +213,11 @@ def inicializar_folio_desde_supabase():
 
         if response.data:
             ultimo_folio = response.data[0]["folio"]
-            if ultimo_folio.startswith("345") and len(ultimo_folio) > 3:
-                try:
-                    numero = int(ultimo_folio[3:])
-                    folio_counter["count"] = numero + 1
-                    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 456{folio_counter['count']}")
-                except ValueError:
-                    print("[ERROR] Formato de folio inválido en BD, iniciando desde 4561")
-                    folio_counter["count"] = 1
-            else:
-                print("[INFO] No hay folios con prefijo 345, iniciando desde 4561")
-                folio_counter["count"] = 1
+            if ultimo_folio.startswith("456") and len(ultimo_folio) > 3:
+    numero = int(ultimo_folio[3:])  # Quitar "456" del inicio
+    print(f"[INFO] Folio Morelos inicializado desde Supabase: {ultimo_folio}, siguiente: 456{folio_counter['count']}")
+else:
+    print("[INFO] No hay folios con prefijo 456, iniciando desde 4561")
         else:
             print("[INFO] No se encontraron folios de Morelos, iniciando desde 4561")
             folio_counter["count"] = 1
