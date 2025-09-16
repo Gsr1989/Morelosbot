@@ -18,37 +18,30 @@ import random
 import string
 from PIL import Image
 
------------- CONFIG ------------
-
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 BASE_URL = os.getenv("BASE_URL", "").rstrip("/")
-URL_CONSULTA_BASE_MORELOS = "https://tlapadecomonfortexpediciondepermisosgob2.onrender.com"  # CAMBIAR POR TU URL
+URL_CONSULTA_BASE_MORELOS = "https://tlapadecomonfortexpediciondepermisosgob2.onrender.com"
 OUTPUT_DIR = "documentos"
 PLANTILLA_PDF = "morelos_hoja1_imagen.pdf"
 PLANTILLA_BUENO = "morelosvergas1.pdf"
-
-Precio del permiso
-
 PRECIO_PERMISO = 200
 
-Coordenadas Morelos
-
 coords_morelos = {
-"folio": (665,282,18,(1,0,0)),
-"placa": (200,200,60,(0,0,0)),
-"fecha": (200,340,14,(0,0,0)),
-"vigencia": (600,340,14,(0,0,0)),
-"marca": (110,425,14,(0,0,0)),
-"serie": (460,420,14,(0,0,0)),
-"linea": (110,455,14,(0,0,0)),
-"motor": (460,445,14,(0,0,0)),
-"anio": (110,485,14,(0,0,0)),
-"color": (460,395,14,(0,0,0)),
-"tipo": (510,470,14,(0,0,0)),
-"nombre": (150,370,14,(0,0,0)),
-"fecha_hoja2": (126,310,15,(0,0,0)),
+    "folio": (665,282,18,(1,0,0)),
+    "placa": (200,200,60,(0,0,0)),
+    "fecha": (200,340,14,(0,0,0)),
+    "vigencia": (600,340,14,(0,0,0)),
+    "marca": (110,425,14,(0,0,0)),
+    "serie": (460,420,14,(0,0,0)),
+    "linea": (110,455,14,(0,0,0)),
+    "motor": (460,445,14,(0,0,0)),
+    "anio": (110,485,14,(0,0,0)),
+    "color": (460,395,14,(0,0,0)),
+    "tipo": (510,470,14,(0,0,0)),
+    "nombre": (150,370,14,(0,0,0)),
+    "fecha_hoja2": (126,310,15,(0,0,0))
 }
 
 Meses en español
