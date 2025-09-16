@@ -31,6 +31,9 @@ PLANTILLA_BUENO = "morelosvergas1.pdf"
 # Precio del permiso
 PRECIO_PERMISO = 200
 
+# ADMIN USER ID - Cambia este ID por el tuyo
+ADMIN_USER_ID = 123456789  # REEMPLAZA CON TU USER_ID REAL
+
 # Coordenadas Morelos
 coords_morelos = {
     "folio": (665,282,18,(1,0,0)),
@@ -71,6 +74,7 @@ dp = Dispatcher(storage=storage)
 timers_activos = {}
 user_folios = {}
 pending_comprobantes = {}
+folios_protegidos = set()  # NUEVA: Folios protegidos por admin
 
 # QR DINÁMICO PARA MORELOS
 def generar_qr_dinamico_morelos(folio):
@@ -95,6 +99,12 @@ def generar_qr_dinamico_morelos(folio):
 async def eliminar_folio_automatico(folio: str):
     """Elimina folio automáticamente después del tiempo límite"""
     try:
+        # NUEVA VERIFICACIÓN: Si está protegido, no eliminar
+        if folio in folios_protegidos:
+            print(f"[ADMIN PROTECTION] Folio {folio} protegido por admin - NO se elimina")
+            limpiar_timer_folio(folio)
+            return
+        
         user_id = None
         if folio in timers_activos:
             user_id = timers_activos[folio]["user_id"]
@@ -120,6 +130,12 @@ async def enviar_recordatorio(folio: str, minutos_restantes: int):
     try:
         if folio not in timers_activos:
             return
+        
+        # NUEVA VERIFICACIÓN: Si está protegido, no enviar recordatorios
+        if folio in folios_protegidos:
+            print(f"[ADMIN PROTECTION] Folio {folio} protegido - no se envían recordatorios")
+            return
+            
         user_id = timers_activos[folio]["user_id"]
         await bot.send_message(
             user_id,
@@ -141,14 +157,14 @@ async def iniciar_timer_pago(user_id: int, folio: str):
         
         for horas in [2, 4, 6, 8, 10]:
             await asyncio.sleep(2 * 60 * 60)
-            if folio not in timers_activos:
-                print(f"[TIMER] Cancelado para folio {folio}")
+            if folio not in timers_activos or folio in folios_protegidos:
+                print(f"[TIMER] Cancelado/Protegido para folio {folio}")
                 return
             horas_restantes = 12 - horas
             await enviar_recordatorio(folio, horas_restantes * 60)
         
         await asyncio.sleep(1.5 * 60 * 60)
-        if folio in timers_activos:
+        if folio in timers_activos and folio not in folios_protegidos:
             await enviar_recordatorio(folio, 30)
         
         await asyncio.sleep(30 * 60)
@@ -183,6 +199,18 @@ def cancelar_timer_folio(folio: str):
                 del user_folios[user_id]
         
         print(f"[SISTEMA] Timer cancelado para folio {folio}, timers restantes: {len(timers_activos)}")
+
+def proteger_folio_admin(folio: str):
+    """NUEVA: Protege un folio indefinidamente (comando admin)"""
+    folios_protegidos.add(folio)
+    # Cancelar timer si existe
+    if folio in timers_activos:
+        timers_activos[folio]["task"].cancel()
+        user_id = timers_activos[folio]["user_id"]
+        del timers_activos[folio]
+        print(f"[ADMIN] Folio {folio} protegido y timer cancelado")
+        return user_id
+    return None
 
 def limpiar_timer_folio(folio: str):
     """Limpia todas las referencias de un folio tras expirar"""
@@ -534,6 +562,69 @@ async def permiso_cmd(message: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
 
+# NUEVA FUNCIÓN: Handler para comando admin SERO
+@dp.message(lambda m: m.text and m.text.upper().startswith("SERO") and len(m.text) > 4)
+async def comando_admin_sero(message: types.Message):
+    try:
+        # Verificar que sea admin
+        if message.from_user.id != ADMIN_USER_ID:
+            return  # Ignorar si no es admin
+        
+        texto = message.text.upper()
+        folio = texto[4:].strip()  # Quitar "SERO" y espacios
+        
+        # Verificar formato de folio (debe empezar con 456)
+        if not folio.startswith("456") or not folio[3:].isdigit():
+            await message.reply(
+                "**❌ FORMATO INCORRECTO**\n\n"
+                "Uso: `SERO456XXXXX`\n"
+                "Ejemplo: `SERO4561234`",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Verificar que el folio existe
+        resp = supabase.table("folios_registrados").select("*").eq("folio", folio).execute()
+        if not resp.data:
+            await message.reply(
+                f"**❌ FOLIO NO ENCONTRADO**\n\n"
+                f"El folio `{folio}` no existe en el sistema.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Proteger folio
+        user_id_cliente = proteger_folio_admin(folio)
+        
+        await message.reply(
+            f"**✅ FOLIO PROTEGIDO POR ADMIN**\n\n"
+            f"**Folio:** `{folio}`\n"
+            f"**Estado:** Timer detenido indefinidamente\n"
+            f"**Acción:** No se eliminará automáticamente\n\n"
+            f"🛡️ **PROTECCIÓN ACTIVA**",
+            parse_mode="Markdown"
+        )
+        
+        # Notificar al cliente si está disponible
+        if user_id_cliente:
+            try:
+                await bot.send_message(
+                    user_id_cliente,
+                    f"**🛡️ FOLIO PROTEGIDO**\n\n"
+                    f"Su folio `{folio}` ha sido protegido por el administrador.\n"
+                    f"**Ya no será eliminado automáticamente.**\n\n"
+                    f"Puede enviar su comprobante cuando guste.",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                print(f"[WARN] No se pudo notificar al cliente {user_id_cliente}: {e}")
+        
+        print(f"[ADMIN] Folio {folio} protegido por admin ID {message.from_user.id}")
+        
+    except Exception as e:
+        print(f"[ERROR] comando_admin_sero: {e}")
+        await message.reply("**❌ Error procesando comando admin**", parse_mode="Markdown")
+
 @dp.message(PermisoForm.marca)
 async def get_marca(message: types.Message, state: FSMContext):
     try:
@@ -823,6 +914,14 @@ async def get_nombre(message: types.Message, state: FSMContext):
         except Exception as e:
             print(f"[WARN] Enviando permiso: {e}")
         
+        # NUEVO: Mensaje final con opción automática /permiso
+        await message.answer(
+            "**🎉 ¡PROCESO COMPLETADO!**\n\n"
+            "Sus documentos han sido generados exitosamente.\n\n"
+            "**📋 Para generar otro permiso use /permiso**",
+            parse_mode="Markdown"
+        )
+        
         await state.clear()
     except Exception as e:
         print(f"[ERROR] get_nombre: {e}")
@@ -868,7 +967,9 @@ async def recibir_comprobante(message: types.Message):
         cancelar_timer_folio(folio_detectado)
         
         await message.reply(
-            f"**✅ Comprobante recibido y validado.**\n**Folio {folio_detectado}** marcado como **PAGADO**.",
+            f"**✅ Comprobante recibido y validado.**\n"
+            f"**Folio {folio_detectado}** marcado como **PAGADO**.\n\n"
+            f"**📋 Para generar otro permiso use /permiso**",
             parse_mode="Markdown"
         )
     except Exception as e:
