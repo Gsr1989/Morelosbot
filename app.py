@@ -410,7 +410,7 @@ def generar_pdf_principal(datos: dict) -> tuple:
             pg.insert_image(rect_qr, stream=buffer.read())
             print(f"[QR MORELOS] QR fallback (texto) insertado en HOJA 1")
 
-        filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"}
+        filename = f"{OUTPUT_DIR}/{datos['folio']}_morelos.pdf"
         doc.save(filename)
         doc.close()
         return filename, True, ""
