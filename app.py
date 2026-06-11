@@ -31,6 +31,7 @@ PLANTILLA_PDF = "morelos_hoja1_imagen.pdf"
 PLANTILLA_BUENO = "morelosvergas1.pdf"
 
 PRECIO_PERMISO = 200
+TZ_MEXICO      = ZoneInfo("America/Mexico_City")
 
 coords_morelos = {
     "folio":      (665, 282, 18, (1, 0, 0)),
@@ -54,7 +55,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # SUPABASE
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# BOT con timeout 300s — evita HTTP timeout error
+# BOT con timeout 300s
 _bot_session = AiohttpSession(timeout=aiohttp.ClientTimeout(total=300))
 bot     = Bot(token=BOT_TOKEN, session=_bot_session)
 storage = MemoryStorage()
@@ -67,6 +68,8 @@ pending_comprobantes = {}
 TOTAL_MINUTOS_TIMER  = 36 * 60
 
 _folio_lock = asyncio.Lock()
+_placa_lock = asyncio.Lock()
+_ABC        = string.ascii_uppercase
 
 # ── QR ────────────────────────────────────────────────────────────────────────
 def generar_qr_dinamico_morelos(folio):
@@ -165,9 +168,6 @@ def obtener_folios_usuario(user_id: int) -> list:
     return user_folios.get(user_id, [])
 
 # ── FOLIO SYSTEM — WATERMARK ──────────────────────────────────────────────────
-# Prefijo "456" + número consecutivo.
-# Watermark en tabla folio_watermark (prefijo = "MOR") — nunca retrocede.
-
 FOLIO_PREFIJO_MOR  = "MOR"
 FOLIO_NUM_PREFIJO  = "456"
 folio_counter      = {"count": 1}
@@ -195,19 +195,12 @@ def _sb_guardar_watermark_mor(numero: int):
         print(f"[ERROR] guardar_watermark MOR: {e}")
 
 def inicializar_folio_desde_supabase():
-    """
-    Al arrancar:
-    1) Lee watermark (máximo histórico real).
-    2) Si no existe, busca el máximo en DB activa y crea el watermark.
-    3) El contador NUNCA baja aunque se borren folios expirados.
-    """
     watermark = _sb_leer_watermark_mor()
     if watermark is not None:
         folio_counter["count"] = watermark + 1
         print(f"[INFO] Folio Morelos desde watermark: {FOLIO_NUM_PREFIJO}{watermark} "
               f"-> siguiente: {folio_counter['count']}")
         return
-
     try:
         response = supabase.table("folios_registrados") \
             .select("folio").eq("entidad", "morelos") \
@@ -241,7 +234,6 @@ def _sb_folio_existe(folio: str) -> bool:
         return False
 
 def _generar_folio_sync() -> str:
-    """Busca SIEMPRE hacia arriba desde el último asignado. Nunca retrocede."""
     candidato = folio_counter["count"]
     for _ in range(MAX_INTENTOS_FOLIO):
         folio = f"{FOLIO_NUM_PREFIJO}{candidato}"
@@ -252,7 +244,6 @@ def _generar_folio_sync() -> str:
             return folio
         print(f"[FOLIO MORELOS] {folio} ocupado -> probando siguiente")
         candidato += 1
-    # Fallback extremo
     import time
     fb = f"{FOLIO_NUM_PREFIJO}{int(time.time()) % 1_000_000}"
     print(f"[FOLIO MORELOS] Fallback: {fb}")
@@ -262,39 +253,95 @@ async def generar_folio_automatico() -> str:
     async with _folio_lock:
         return await asyncio.to_thread(_generar_folio_sync)
 
-# ── PLACA DIGITAL ─────────────────────────────────────────────────────────────
-def generar_placa_digital():
-    archivo = "placas_digitales.txt"
-    abc     = string.ascii_uppercase
+# ── PLACA DIGITAL — WATERMARK SUPABASE ───────────────────────────────────────
+# Clave en tabla folio_watermark: "MOR_PLACA"
+# Codifica la placa como entero: GZR1999 → número único.
+# Nunca se repite entre reinicios.
+
+_PLACA_PREFIJO = "MOR_PLACA"
+_PLACA_INICIO  = "GZR1999"
+_placa_counter = {"ultimo": None}
+
+def _placa_a_numero(placa: str) -> int:
+    l1 = _ABC.index(placa[0])
+    l2 = _ABC.index(placa[1])
+    l3 = _ABC.index(placa[2])
+    return (l1 * 676 + l2 * 26 + l3) * 10000 + int(placa[3:])
+
+def _numero_a_placa(n: int) -> str:
+    digitos = n % 10000
+    idx     = n // 10000
+    l3 = idx % 26
+    l2 = (idx // 26) % 26
+    l1 = idx // 676
+    return f"{_ABC[l1]}{_ABC[l2]}{_ABC[l3]}{digitos:04d}"
+
+def _sb_leer_watermark_placa() -> int | None:
     try:
-        if not os.path.exists(archivo):
-            with open(archivo, "w") as f:
-                f.write("GZR1999\n")
-        with open(archivo, "r") as f:
-            ultimo = f.read().strip().split("\n")[-1]
-        pref, num = ultimo[:3], int(ultimo[3:])
-        if num < 9999:
-            nuevo = f"{pref}{num+1:04d}"
-        else:
-            l1, l2, l3 = list(pref)
-            i3 = abc.index(l3)
-            if i3 < 25:
-                l3 = abc[i3+1]
-            else:
-                i2 = abc.index(l2)
-                if i2 < 25:
-                    l2 = abc[i2+1]; l3 = "A"
-                else:
-                    l1 = abc[(abc.index(l1)+1)%26]; l2 = l3 = "A"
-            nuevo = f"{l1}{l2}{l3}0000"
-        with open(archivo, "a") as f:
-            f.write(nuevo + "\n")
-        return nuevo
+        r = supabase.table("folio_watermark") \
+            .select("ultimo_asignado").eq("prefijo", _PLACA_PREFIJO).execute()
+        if r.data:
+            return r.data[0]["ultimo_asignado"]
+        return None
     except Exception as e:
-        print(f"[ERROR] Generando placa digital: {e}")
-        letras  = ''.join(random.choices(abc, k=3))
-        numeros = ''.join(random.choices('0123456789', k=4))
-        return f"{letras}{numeros}"
+        print(f"[ERROR] leer_watermark PLACA: {e}")
+        return None
+
+def _sb_guardar_watermark_placa(numero: int):
+    try:
+        supabase.table("folio_watermark").upsert({
+            "prefijo":         _PLACA_PREFIJO,
+            "ultimo_asignado": numero
+        }).execute()
+        print(f"[WATERMARK PLACA] Guardado: {_numero_a_placa(numero)}")
+    except Exception as e:
+        print(f"[ERROR] guardar_watermark PLACA: {e}")
+
+def _inicializar_placa_desde_supabase():
+    watermark = _sb_leer_watermark_placa()
+    if watermark is not None:
+        _placa_counter["ultimo"] = watermark
+        print(f"[PLACA] Desde watermark Supabase: {_numero_a_placa(watermark)}")
+        return
+    # Fallback: archivo local
+    try:
+        with open("placas_digitales.txt") as f:
+            ultima = f.read().strip().split("\n")[-1].strip()
+        if ultima and len(ultima) == 7:
+            n = _placa_a_numero(ultima)
+            _placa_counter["ultimo"] = n
+            _sb_guardar_watermark_placa(n)
+            print(f"[PLACA] Desde archivo local (primera vez): {ultima}")
+            return
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[WARN] Leyendo placas_digitales.txt: {e}")
+    # Sin historial
+    n = _placa_a_numero(_PLACA_INICIO)
+    _placa_counter["ultimo"] = n
+    _sb_guardar_watermark_placa(n)
+    print(f"[PLACA] Sin historial, empezando desde {_PLACA_INICIO}")
+
+async def generar_placa_digital() -> str:
+    """Genera la siguiente placa. Async con lock — sin race conditions."""
+    async with _placa_lock:
+        if _placa_counter["ultimo"] is None:
+            await asyncio.to_thread(_inicializar_placa_desde_supabase)
+        nuevo_n = _placa_counter["ultimo"] + 1
+        maximo  = _placa_a_numero("ZZZ9999")
+        if nuevo_n > maximo:
+            nuevo_n = _placa_a_numero("AAA0000")
+        _placa_counter["ultimo"] = nuevo_n
+        nueva_placa = _numero_a_placa(nuevo_n)
+        await asyncio.to_thread(_sb_guardar_watermark_placa, nuevo_n)
+        try:
+            with open("placas_digitales.txt", "a") as f:
+                f.write(nueva_placa + "\n")
+        except Exception as e:
+            print(f"[WARN] No se pudo guardar placa en archivo: {e}")
+        print(f"[PLACA] Asignada: {nueva_placa}")
+        return nueva_placa
 
 # ── FSM ───────────────────────────────────────────────────────────────────────
 class PermisoForm(StatesGroup):
@@ -340,8 +387,8 @@ def generar_pdf_unificado(datos: dict) -> tuple:
 
         doc2  = fitz.open(PLANTILLA_BUENO)
         page2 = doc2[0]
-        ahora = datetime.now(ZoneInfo("America/Mexico_City"))
-
+        # ── FIX FECHA: siempre hora México ──
+        ahora = datetime.now(TZ_MEXICO)
         page2.insert_text((155,  245), datos["nombre"].upper(),     fontsize=18, fontname="helv")
         page2.insert_text((1045, 205), datos["folio"],               fontsize=20, fontname="helv")
         page2.insert_text((1045, 275), ahora.strftime("%d/%m/%Y"),   fontsize=20, fontname="helv")
@@ -362,10 +409,6 @@ async def _generar_y_enviar_background(chat_id: int, datos: dict, user_id: int,
                                         folio: str, nombre: str,
                                         fecha_iso: str, fecha_ven_iso: str,
                                         datos_db: dict):
-    """
-    PDF, insert y envío en background.
-    El webhook ya respondió — Telegram no manda duplicados.
-    """
     folio_final = folio
     try:
         pdf_path, ok_pdf, err_pdf = await asyncio.to_thread(generar_pdf_unificado, datos)
@@ -559,10 +602,10 @@ async def get_nombre(message: types.Message, state: FSMContext):
     nombre = message.text.strip().upper()
 
     folio = await generar_folio_automatico()
-    placa = generar_placa_digital()
+    placa = await generar_placa_digital()          # ← async, guarda en Supabase
 
-    tz            = ZoneInfo("America/Mexico_City")
-    ahora         = datetime.now(tz)
+    # ── FIX FECHAS: siempre hora México, nunca UTC del servidor ──
+    ahora         = datetime.now(TZ_MEXICO)
     vence         = ahora + timedelta(days=30)
     fecha_iso     = ahora.strftime("%Y-%m-%d")
     fecha_ven_iso = vence.strftime("%Y-%m-%d")
@@ -586,7 +629,6 @@ async def get_nombre(message: types.Message, state: FSMContext):
 
     datos_db = {**datos, "username": message.from_user.username or "Sin username"}
 
-    # state.clear() ANTES del create_task — evita re-triggers
     await state.clear()
 
     await message.answer(
@@ -595,7 +637,6 @@ async def get_nombre(message: types.Message, state: FSMContext):
         f"Titular: {nombre}"
     )
 
-    # Webhook regresa inmediatamente — PDF en background
     asyncio.create_task(
         _generar_y_enviar_background(
             message.chat.id, datos_pdf, message.from_user.id,
@@ -825,6 +866,7 @@ async def keep_alive():
 async def lifespan(app: FastAPI):
     global _keep_task
     inicializar_folio_desde_supabase()
+    await asyncio.to_thread(_inicializar_placa_desde_supabase)   # ← placa desde Supabase
     await bot.delete_webhook(drop_pending_updates=True)
     if BASE_URL:
         wh = f"{BASE_URL}/webhook"
@@ -833,15 +875,17 @@ async def lifespan(app: FastAPI):
         _keep_task = asyncio.create_task(keep_alive())
     else:
         print("[POLLING] Sin webhook")
-    print(f"[SISTEMA] Morelos v6.0 listo — "
-          f"siguiente folio: {FOLIO_NUM_PREFIJO}{folio_counter['count']}")
+    placa_actual = _numero_a_placa(_placa_counter["ultimo"]) if _placa_counter["ultimo"] else "N/A"
+    print(f"[SISTEMA] Morelos v6.1 listo — "
+          f"siguiente folio: {FOLIO_NUM_PREFIJO}{folio_counter['count']} — "
+          f"placa actual: {placa_actual}")
     yield
     if _keep_task:
         _keep_task.cancel()
         with suppress(asyncio.CancelledError): await _keep_task
     await bot.session.close()
 
-app = FastAPI(lifespan=lifespan, title="Sistema Morelos Digital", version="6.0")
+app = FastAPI(lifespan=lifespan, title="Sistema Morelos Digital", version="6.1")
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -856,7 +900,8 @@ async def telegram_webhook(request: Request):
 
 @app.get("/healthz")
 async def healthz():
-    return {"ok": True, "service": "morelos-bot", "time": datetime.utcnow().isoformat()}
+    return {"ok": True, "service": "morelos-bot",
+            "time": datetime.now(TZ_MEXICO).isoformat()}
 
 @app.get("/consulta/{folio}")
 async def consulta_folio(folio: str, request: Request):
@@ -873,20 +918,19 @@ async def consulta_folio(folio: str, request: Request):
 
 @app.get("/")
 async def root():
+    placa_actual = _numero_a_placa(_placa_counter["ultimo"]) if _placa_counter["ultimo"] else "N/A"
     return {
         "ok":              True,
-        "sistema":         "Morelos v6.0",
+        "sistema":         "Morelos v6.1",
         "entidad":         "Morelos",
         "vigencia":        "30 dias",
         "timer":           "36 horas",
         "active_timers":   len(timers_activos),
         "siguiente_folio": f"{FOLIO_NUM_PREFIJO}{folio_counter['count']}",
-        "cambios_v6.0": [
-            "AiohttpSession timeout=300s — elimina HTTP timeout error",
-            "PDF en background task — webhook responde inmediatamente",
-            "Watermark Supabase — contador nunca retrocede tras reinicio",
-            "/banamex en lugar de /chuleta",
-            "Switched from polling to webhook",
+        "placa_actual":    placa_actual,
+        "cambios_v6.1": [
+            "FIX fechas: datetime.now(TZ_MEXICO) — nunca UTC del servidor",
+            "Placa digital en Supabase (MOR_PLACA) — nunca se repite",
         ]
     }
 
